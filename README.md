@@ -12,5 +12,7 @@ Funciona con el dedo y se puede instalar como app: en iPhone, abrí el link en S
 - Reborde con grosor y color, glow, fondo de ajedrez para ver la transparencia.
 - Capas (agregar, borrar, subir/bajar, ocultar) compartidas por todos los frames.
 - Animación: cantidad de frames, duplicar frame, play/pausa/stop, FPS y onion skin. Exporta JSON de animación y PNG sprite sheet.
+- Importar imagen (PNG/JPG): se achica al tamaño del lienzo y se carga en la capa actual, con opción de ajustar a la paleta.
+- Ícono de la app a elección (corazón, calavera, pelota, escudos con colores de clubes argentinos o el propio dibujo), guardado en el teléfono.
 - Exporta JSON y BIN en escala de grises y PNG con la opción "negro = transparente".
 - Táctil, diseño para celular y modo offline (PWA).
