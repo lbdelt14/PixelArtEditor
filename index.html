@@ -242,6 +242,17 @@
         width: 70px;
         flex: none;
       }
+      .icon-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .icon-row button {
+        width: 48px;
+        height: 48px;
+        padding: 0;
+        font-size: 22px;
+      }
       button:disabled {
         opacity: 0.4;
         cursor: default;
@@ -293,6 +304,17 @@
     </div>
     <div class="sidebar">
       <div class="section">
+        <div class="icon-row">
+          <button id="projNew" title="Nuevo proyecto (se puede deshacer)" aria-label="Nuevo proyecto">🆕</button>
+          <button id="projSave" title="Guardar proyecto (.pixel.json, con capas y frames)" aria-label="Guardar proyecto">💾</button>
+          <button id="projOpen" title="Abrir un proyecto guardado" aria-label="Abrir proyecto">📂</button>
+          <button id="imgBtn" title="Importar imagen: se achica al tamaño del lienzo y se carga en la capa actual" aria-label="Importar imagen">🖼</button>
+          <button onclick="clearCanvas()" title="Limpiar la capa actual o la selección (se puede deshacer)" aria-label="Limpiar">🗑</button>
+        </div>
+        <input type="file" id="projIn" accept=".json,application/json" style="display: none" />
+        <input type="file" id="imgIn" accept="image/*" style="display: none" />
+      </div>
+      <div class="section">
         <h2>Tamaño del lienzo</h2>
         <select id="szSel"></select>
         <div id="customSz" style="display: none; align-items: center; gap: 6px">
@@ -305,16 +327,6 @@
         </div>
       </div>
       <div class="section">
-        <h2>Proyecto</h2>
-        <div class="tool-grid">
-          <button id="projNew" title="Empieza un proyecto vacío (se puede deshacer)">🆕 Nuevo</button>
-          <button id="projSave" title="Descarga el proyecto completo, con capas y frames">💾 Guardar</button>
-          <button id="projOpen" title="Abre un proyecto guardado (.json)">📂 Abrir</button>
-        </div>
-        <input type="file" id="projIn" accept=".json,application/json" style="display: none" />
-        <div class="hint">Mientras dibujás se guarda solo en este dispositivo.</div>
-      </div>
-      <div class="section">
         <h2>Herramientas</h2>
         <div class="tool-grid">
           <button class="tool-btn active" data-tool="pen">✏️ Pincel</button>
@@ -324,7 +336,7 @@
           <button class="tool-btn" data-tool="line">📏 Línea</button>
           <button class="tool-btn" data-tool="rect">▭ Rectángulo</button>
           <button class="tool-btn" data-tool="ellipse">◯ Elipse</button>
-          <button class="tool-btn" data-tool="move">✥ Mover</button>
+          <button class="tool-btn" data-tool="move">✋ Mover</button>
           <button class="tool-btn" data-tool="select">⬚ Selección</button>
           <button class="tool-btn" data-tool="wand">🪄 Varita (mismo color)</button>
         </div>
@@ -342,7 +354,8 @@
         <div id="moveOpts" class="hint" style="display: none">
           Arrastrá para mover la selección, o la capa entera si no hay selección. Con teclado: flechas.
         </div>
-        <div id="selOpts" style="display: none; grid-template-columns: repeat(4, 1fr); gap: 6px">
+        <div id="selOpts" style="display: none; grid-template-columns: repeat(5, 1fr); gap: 6px">
+          <button id="selMove" title="Mover la selección (arrastrá con la manito)">✋ Mover</button>
           <button id="selAdd" title="Las nuevas selecciones se suman a la actual">➕ Sumar</button
           ><button id="selAll" title="Seleccionar todo">▣ Todo</button
           ><button id="selInv" title="Invertir selección">⇄ Invertir</button
@@ -424,6 +437,9 @@
           <button id="palAdd">➕ Agregar color a Mi paleta</button>
           <button id="palClear">🗑 Vaciar Mi paleta</button>
         </div>
+        <button id="quantBtn" title="Al importar una imagen, cada píxel toma el color más parecido de la paleta elegida">
+          🎨 Ajustar a la paleta al importar imagen
+        </button>
       </div>
       <div class="section">
         <h2>Efectos</h2>
@@ -441,7 +457,24 @@
         ><button onclick="undo()">↶ Deshacer</button>
       </div>
       <div class="section">
+        <h2>Íconos y dibujos prediseñados</h2>
+        <div class="hint">1. Tocá un diseño (o “Mi dibujo”) para elegirlo.</div>
+        <div id="iconGrid"></div>
+        <button id="iconMine">🖌 Elegir mi dibujo actual</button>
+        <div class="tool-grid">
+          <button id="iconSave">💾 Guardar como ícono de la app</button>
+          <button id="iconToCanvas" title="Lo pega centrado en la capa actual (se puede deshacer)">🎨 Cargar en el lienzo</button>
+        </div>
+        <div id="iconSaved" class="hint"></div>
+        <div class="hint">
+          2. Tocá “Guardar como ícono”: queda guardado en este teléfono. 3. En iPhone, para verlo en la pantalla de
+          inicio: mantené apretado el ícono viejo → Eliminar, y volvé a agregarlo desde Safari (Compartir → Agregar a
+          pantalla de inicio).
+        </div>
+      </div>
+      <div class="section">
         <h2>Exportar</h2>
+        <button onclick="downloadImage()">📷 PNG</button>
         <textarea id="exportData" readonly></textarea><button onclick="copyToClipboard()">📋 Copiar</button
         ><button onclick="downloadJSON()">💾 JSON</button><button onclick="downloadBinary()">💾 BIN</button
         ><button onclick="downloadAnimJSON()">🎞 JSON animación</button
@@ -457,31 +490,17 @@
             <option value="16">×16</option>
           </select></label
         >
-      </div>
-      <div class="section">
-        <input type="file" id="imgIn" accept="image/*" style="display: none" /><button
-          id="imgBtn"
-          title="La imagen se achica al tamaño del lienzo y se carga en la capa actual"
-        >
-          🖼 Importar imagen a la grilla</button
-        ><button id="quantBtn" title="Al importar, cada píxel toma el color más parecido de la paleta elegida">
-          🎨 Ajustar a la paleta al importar</button
-        ><button onclick="clearCanvas()">🗑️ Limpiar</button><button onclick="downloadImage()">📷 PNG</button>
-      </div>
-      <div class="section">
-        <h2>Íconos y dibujos prediseñados</h2>
-        <div class="hint">1. Tocá un diseño (o “Mi dibujo”) para elegirlo.</div>
-        <div id="iconGrid"></div>
-        <button id="iconMine">🖌 Elegir mi dibujo actual</button>
         <div class="tool-grid">
-          <button id="iconSave">💾 Guardar como ícono de la app</button>
-          <button id="iconToCanvas" title="Lo pega centrado en la capa actual (se puede deshacer)">🎨 Cargar en el lienzo</button>
+          <button id="sendKey" title="Chrome o Edge en la PC, con el llavero conectado por USB">
+            📟 Enviar al llavero (USB)
+          </button>
+          <button id="ditherBtn" title="Simula los grises con puntos alternados al pasar a blanco y negro">
+            ▦ Tramado de grises
+          </button>
         </div>
-        <div id="iconSaved" class="hint"></div>
         <div class="hint">
-          2. Tocá “Guardar como ícono”: queda guardado en este teléfono. 3. En iPhone, para verlo en la pantalla de
-          inicio: mantené apretado el ícono viejo → Eliminar, y volvé a agregarlo desde Safari (Compartir → Agregar a
-          pantalla de inicio).
+          El llavero es blanco y negro y muestra hasta 64×64: cada píxel se prende o se apaga según su brillo. Funciona en
+          Chrome o Edge de la PC (el iPhone no tiene USB serie).
         </div>
       </div>
     </div>
@@ -775,6 +794,7 @@
           commitRectSel();
         }
         if (shapeStart) commitShape();
+        if (moveBase) canvas.style.cursor = "grab";
         moveBase = null;
         markDirty();
       };
@@ -2867,6 +2887,7 @@
         updateExport();
       };
       const startMove = (x, y) => {
+        canvas.style.cursor = "grabbing";
         checkpoint();
         moveBase = { ...baseNow(), sx: x, sy: y };
       };
@@ -2933,6 +2954,7 @@
         setStatus("Pegado: arrastralo para ubicarlo");
       };
       document.getElementById("copyBtn").onclick = copySel;
+      document.getElementById("selMove").onclick = () => selectTool("move");
       document.getElementById("cutBtn").onclick = cutSel;
       document.getElementById("pasteBtn").onclick = pasteClip;
 
@@ -2965,6 +2987,8 @@
 
       // ---------- opciones visibles según la herramienta
       const updToolOpts = () => {
+        canvas.style.cursor = tool === "move" ? "grab" : "crosshair";
+        document.getElementById("selMove").classList.toggle("active", tool === "move");
         document.getElementById("shapeOpts").style.display = SHAPES.includes(tool) ? "block" : "none";
         document.getElementById("replOpts").style.display = tool === "replace" ? "flex" : "none";
         document.getElementById("moveOpts").style.display = tool === "move" ? "block" : "none";
@@ -3222,6 +3246,81 @@
           transformFrom(baseNow(), (x, y) => [x - dir[0], y - dir[1]]);
         }
       });
+      // ---------- enviar al llavero por USB (Web Serial). Protocolo descrito en el firmware del llavero.
+      let dither = false;
+      document.getElementById("ditherBtn").onclick = (e) => {
+        dither = !dither;
+        e.currentTarget.classList.toggle("active", dither);
+      };
+      const BAYER = [
+        [0, 8, 2, 10],
+        [12, 4, 14, 6],
+        [3, 11, 1, 9],
+        [15, 7, 13, 5],
+      ];
+      // 1 bit per pixel, rows top to bottom, least significant bit = leftmost pixel (XBM order).
+      const keychainPacket = (useDither) => {
+        const G = fexp(cf),
+          rowBytes = Math.ceil(W / 8),
+          bits = new Uint8Array(rowBytes * H);
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            const v = grayOf(G[y][x]);
+            const on = useDither ? v > (BAYER[y % 4][x % 4] + 0.5) * 16 : v >= 128;
+            if (on) bits[y * rowBytes + (x >> 3)] |= 1 << (x & 7);
+          }
+        let sum = (W + H) & 255;
+        bits.forEach((b) => (sum = (sum + b) & 255));
+        return Uint8Array.from([0x50, 0x58, W, H, ...bits, sum]);
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const sendToKeychain = async () => {
+        if (!("serial" in navigator))
+          return setStatus("⚠ Para enviar al llavero usá Chrome o Edge en la PC (el iPhone no tiene USB serie)");
+        if (W > 64 || H > 64) return setStatus("⚠ El llavero muestra hasta 64×64: elegí un lienzo de ese tamaño o menor");
+        const packet = keychainPacket(dither);
+        let port;
+        try {
+          port = await navigator.serial.requestPort();
+          await port.open({ baudRate: 115200 });
+        } catch (_) {
+          return setStatus("Envío cancelado");
+        }
+        try {
+          setStatus("Conectando con el llavero…");
+          await sleep(2000); // the Nano reboots when the port opens
+          const writer = port.writable.getWriter();
+          for (let i = 0; i < packet.length; i += 32) {
+            await writer.write(packet.slice(i, i + 32));
+            await sleep(8); // the Nano's serial buffer is only 64 bytes
+          }
+          writer.releaseLock();
+          const reader = port.readable.getReader();
+          const dec = new TextDecoder();
+          let reply = "";
+          const deadline = Date.now() + 3000;
+          while (!reply.includes("\n") && Date.now() < deadline) {
+            const r = await Promise.race([reader.read(), sleep(deadline - Date.now()).then(() => ({ done: true }))]);
+            if (r.done) break;
+            reply += dec.decode(r.value);
+          }
+          await reader.cancel().catch(() => {});
+          reader.releaseLock();
+          setStatus(
+            reply.startsWith("OK")
+              ? "Enviado al llavero ✓"
+              : reply
+                ? "⚠ El llavero respondió: " + reply.trim()
+                : "⚠ El llavero no respondió (¿tiene cargado el firmware?)",
+          );
+        } catch (err) {
+          setStatus("⚠ Error al enviar: " + err.message);
+        } finally {
+          await port.close().catch(() => {});
+        }
+      };
+      document.getElementById("sendKey").onclick = sendToKeychain;
+
       loadAutosave();
       applyZoom();
       updateColor();
