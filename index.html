@@ -697,6 +697,12 @@
         try {
           canvas.setPointerCapture(e.pointerId);
         } catch (_) {}
+        // A new first touch means no other finger is down; drop any pointer whose "up" iOS never delivered.
+        if (e.isPrimary) {
+          pointers.clear();
+          gesture = null;
+          gestureLock = false;
+        }
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pointers.size === 2) {
           startGesture();
@@ -708,6 +714,11 @@
         if (x < 0 || x >= W || y < 0 || y >= H) return;
         downUndoLen = undoStack.length;
         if (tool !== "move") pasteFloat = null;
+        if (["pen", "bucket", "replace", ...SHAPES].includes(tool)) {
+          const why = paintBlocker(x, y);
+          if (why) setStatus(why);
+          else if (document.getElementById("status").textContent.startsWith("⚠")) setStatus("");
+        }
         if (tool === "select") {
           selStart = [x, y];
           selCur = [x, y];
@@ -2478,11 +2489,8 @@
         redraw();
       };
       document.getElementById("selInv").onclick = () => {
-        if (!selMask) {
-          selMask = newMask(false);
-        } else {
-          selMask = selMask.map((r) => r.map((v) => !v));
-        }
+        if (!selMask) return;
+        selMask = selMask.map((r) => r.map((v) => !v));
         updSelUI();
         redraw();
       };
@@ -2622,7 +2630,7 @@
         saveT = null;
         try {
           localStorage.setItem("pae-project", JSON.stringify(serialize()));
-          setStatus("Guardado ✓");
+          if (!document.getElementById("status").textContent.startsWith("⚠")) setStatus("Guardado ✓");
         } catch (_) {
           setStatus("⚠ No se pudo guardar solo (proyecto muy grande): usá 💾 Guardar");
         }
@@ -2886,7 +2894,17 @@
         redraw();
         updateExport();
       };
+      // Explains why painting has no visible effect instead of failing silently.
+      const paintBlocker = (x, y) => {
+        if (!layers[cl].visible) return "⚠ La capa actual está oculta: activá su casilla en CAPAS";
+        if ((layers[cl].opacity ?? 1) === 0) return "⚠ La capa actual tiene opacidad 0";
+        if (alpha === 0) return "⚠ La opacidad del color está en 0%";
+        if (selMask && !selMask[y][x])
+          return "⚠ Estás fuera de la selección: tocá ✕ Quitar (o Esc) para pintar en todo el lienzo";
+        return null;
+      };
       const startMove = (x, y) => {
+        setStatus("✋ Moviendo. Para pintar, elegí ✏️ Pincel");
         canvas.style.cursor = "grabbing";
         checkpoint();
         moveBase = { ...baseNow(), sx: x, sy: y };
