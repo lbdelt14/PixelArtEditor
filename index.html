@@ -348,22 +348,16 @@
         overflow-y: auto;
       }
       @media (max-width: 820px) {
+        /* Solo el lienzo queda quieto: el resto de la página (menús, capas, animación, herramientas)
+           se desplaza por debajo. Por eso el contenedor se deshace y el lienzo se pega al borde superior. */
         .col-izq {
+          display: contents;
+        }
+        #viewport {
           position: sticky;
           top: 0;
           z-index: 5;
-          display: block;
-          overflow: visible;
-          max-height: 64vh;
-          max-height: 64dvh;
-          overflow-y: auto;
           background: var(--bg);
-          padding: 4px 0 8px;
-        }
-        .col-izq > * + * {
-          margin-top: 14px;
-        }
-        #viewport {
           max-height: 44vh;
           max-height: 44dvh;
           flex: none;
@@ -376,8 +370,8 @@
         }
         #anim,
         #layersPanel {
-          max-height: 30vh;
-          max-height: 30dvh;
+          max-height: none;
+          overflow: visible;
         }
       }
     </style>
