@@ -158,6 +158,18 @@
         display: flex;
         gap: 6px;
         align-items: center;
+        flex-wrap: wrap;
+      }
+      input[type="text"] {
+        background: #0f3460;
+        border: 1px solid #64b5f6;
+        color: #fff;
+        padding: 6px;
+        border-radius: 6px;
+        font-size: 12px;
+      }
+      .color-preview {
+        cursor: pointer;
       }
       .layer-row button {
         text-align: left;
@@ -269,16 +281,20 @@
         <span id="zoomVal">100%</span>
         <button id="zoomIn" class="mini" title="Acercar (en el teléfono: pellizcá con dos dedos)">+</button>
         <button id="zoomFit" class="mini" title="Ajustar a la pantalla">⤢ Ajustar</button>
+        <button id="animToggle" class="mini" title="Muestra u oculta los controles de frames y animación">🎞 Animación</button>
+        <button id="tileToggle" class="mini" title="Repite el dibujo alrededor para diseñar mosaicos sin costuras">▦ Tile</button>
         <span id="status"></span>
       </div>
       <div id="viewport"><canvas id="canvas"></canvas></div>
-      <div id="anim" style="width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 8px">
+      <div id="anim" style="width: 100%; max-width: 640px; display: none; flex-direction: column; gap: 8px">
         <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px">
-          <button id="aPrev" class="mini" title="Frame anterior">⏮</button
+          <button id="aFirst" class="mini" title="Ir al primer frame">⏮</button
+          ><button id="aPrev" class="mini" title="Un frame atrás">⏪</button
           ><button id="aPlay" class="mini" title="Play">▶</button
           ><button id="aPause" class="mini" title="Pausa">⏸</button
           ><button id="aStop" class="mini" title="Stop (vuelve al frame 1)">⏹</button
-          ><button id="aNext" class="mini" title="Frame siguiente">⏭</button><span>FPS</span
+          ><button id="aNext" class="mini" title="Un frame adelante">⏩</button
+          ><button id="aLast" class="mini" title="Ir al último frame">⏭</button><span>FPS</span
           ><input type="range" id="aFps" min="1" max="24" value="8" style="width: 90px" /><span id="aFpsVal">8</span
           ><span>Frames</span><input type="number" id="aCount" min="1" max="64" value="1" style="width: 60px" /><button
             id="aCountApply"
@@ -330,6 +346,7 @@
         <h2>Herramientas</h2>
         <div class="tool-grid">
           <button class="tool-btn active" data-tool="pen">✏️ Pincel</button>
+          <button class="tool-btn" data-tool="eraser">🧽 Goma</button>
           <button class="tool-btn" data-tool="bucket">🪣 Balde</button>
           <button class="tool-btn" data-tool="eyedropper">🎯 Pipeta</button>
           <button class="tool-btn" data-tool="replace">🔁 Reemplazar color</button>
@@ -349,7 +366,10 @@
             <option value="frame">En todas las capas de este frame</option>
             <option value="all">En todas las capas y frames</option>
           </select>
-          <div class="hint">Tocá un píxel: ese color se cambia por el color actual (respeta la selección).</div>
+          <div class="hint">
+            Origen: el color del píxel que toques en el lienzo. Destino: el color elegido ahora en “Color”. Respeta la
+            selección y saltea las capas bloqueadas.
+          </div>
         </div>
         <div id="moveOpts" class="hint" style="display: none">
           Arrastrá para mover la selección, o la capa entera si no hay selección. Con teclado: flechas.
@@ -360,6 +380,7 @@
           ><button id="selAll" title="Seleccionar todo">▣ Todo</button
           ><button id="selInv" title="Invertir selección">⇄ Invertir</button
           ><button id="selNone" title="Quitar selección (Esc)">✕ Quitar</button>
+          <div id="selInfo" class="hint" style="grid-column: 1 / -1"></div>
         </div>
         <div id="bucketOpts" style="display: none; grid-template-columns: repeat(3, 1fr); gap: 8px">
           <button class="bm-btn active" data-bmode="all" title="Llenar todo el lienzo">▦ Todo</button
@@ -399,7 +420,12 @@
         <div class="tool-grid">
           <button id="symX" title="Lo que dibujás se repite espejado izquierda-derecha">⇆ Simetría izq/der</button>
           <button id="symY" title="Lo que dibujás se repite espejado arriba-abajo">⇅ Simetría arriba/abajo</button>
+          <button id="symD1" title="Lo que dibujás se repite espejado sobre la diagonal ╲">⤡ Simetría diagonal ╲</button>
+          <button id="symD2" title="Lo que dibujás se repite espejado sobre la diagonal ╱">⤢ Simetría diagonal ╱</button>
         </div>
+        <button id="ppBtn" title="Con el pincel o la goma de 1 píxel, saca el píxel de más en las esquinas del trazo">
+          ✨ Pixel perfect (trazo fino sin escalones dobles)
+        </button>
       </div>
       <div class="section">
         <h2>Tamaño</h2>
@@ -408,7 +434,28 @@
       </div>
       <div class="section">
         <h2>Color</h2>
-        <div class="color-preview" id="colorPreview"></div>
+        <div class="color-preview" id="colorPreview" title="Tocá para abrir el selector de color"></div>
+        <input
+          type="color"
+          id="colorNative"
+          style="position: absolute; opacity: 0; width: 1px; height: 1px; border: 0; padding: 0"
+        />
+        <div style="display: flex; gap: 6px">
+          <select id="colFmt" style="width: 90px; flex: none" title="Formato en que se muestra el color">
+            <option value="hex">Hex</option>
+            <option value="rgba">RGBA</option>
+            <option value="hsla">HSLA</option>
+          </select>
+          <input
+            type="text"
+            id="colText"
+            spellcheck="false"
+            autocapitalize="off"
+            style="flex: 1; min-width: 0"
+            title="Escribí un color: #ff8800, rgb(255,136,0), hsla(32,100%,50%,0.5)…"
+          />
+        </div>
+        <div class="hint">Tocá la barra para abrir el selector de color, o escribí el código y Enter.</div>
         <label
           >Hue: <span id="hueVal">0°</span
           ><input type="range" id="hueSlider" min="0" max="360" value="0" style="width: 70%; margin: 0" /></label
@@ -475,21 +522,29 @@
       <div class="section">
         <h2>Exportar</h2>
         <button onclick="downloadImage()">📷 PNG</button>
+        <button onclick="sharePNG()">📤 Compartir PNG (mail, WhatsApp…)</button>
         <textarea id="exportData" readonly></textarea><button onclick="copyToClipboard()">📋 Copiar</button
         ><button onclick="downloadJSON()">💾 JSON</button><button onclick="downloadBinary()">💾 BIN</button
         ><button onclick="downloadAnimJSON()">🎞 JSON animación</button
         ><button onclick="downloadSheet()">🎞 PNG sprite sheet</button
         ><button onclick="downloadGIF()">🎞 GIF animado</button
         ><label
-          >Escala PNG / GIF:
-          <select id="expScale" style="width: 90px">
-            <option value="1">×1</option>
-            <option value="2">×2</option>
-            <option value="4">×4</option>
-            <option value="8">×8</option>
-            <option value="16">×16</option>
+          >Tamaño de salida (PNG / GIF):
+          <select id="expScale" style="width: 190px">
+            <option value="x1">Original (1 píxel = 1 píxel)</option>
+            <option value="x2">×2</option>
+            <option value="x4">×4</option>
+            <option value="x8">×8</option>
+            <option value="x16">×16</option>
+            <option value="256">256 px</option>
+            <option value="512" selected>512 px</option>
+            <option value="1024">1024 px (ícono de app)</option>
           </select></label
         >
+        <div class="hint">
+          Los píxeles salen siempre cuadrados y nítidos. Con un tamaño en px, el PNG mide exactamente eso y el dibujo va
+          centrado; el JSON y el BIN no cambian.
+        </div>
         <div class="tool-grid">
           <button id="sendKey" title="Chrome o Edge en la PC, con el llavero conectado por USB">
             📟 Enviar al llavero (USB)
@@ -520,6 +575,11 @@
       let lastPt = null;
       let symX = false,
         symY = false,
+        symD1 = false,
+        symD2 = false,
+        tileMode = false,
+        pixelPerfect = false,
+        strokePath = [],
         shapeFill = false,
         zoom = 1,
         pasteFloat = null,
@@ -553,6 +613,7 @@
         document.getElementById("lumVal").textContent = l + "%";
         document.getElementById("alphaVal").textContent = Math.round(alpha * 100) + "%";
         updateExport();
+        refreshColText();
       };
       document.querySelectorAll(".tool-btn").forEach((btn) =>
         btn.addEventListener("click", () => {
@@ -575,14 +636,24 @@
         bsize = e.target.value;
         document.getElementById("brushVal").textContent = bsize;
       });
+      // In tile mode the canvas shows 3x3 copies and coordinates are relative to the center tile.
       const getCoords = (e) => {
         const rect = canvas.getBoundingClientRect();
         const sx = canvas.width / rect.width,
           sy = canvas.height / rect.height;
-        return [Math.floor(((e.clientX - rect.left) * sx) / PSIZE), Math.floor(((e.clientY - rect.top) * sy) / PSIZE)];
+        const cx = Math.floor(((e.clientX - rect.left) * sx) / PSIZE),
+          cy = Math.floor(((e.clientY - rect.top) * sy) / PSIZE);
+        return tileMode ? [cx - W, cy - H] : [cx, cy];
       };
+      const wrapX = (x) => ((x % W) + W) % W;
+      const wrapY = (y) => ((y % H) + H) % H;
+      // c === null erases. In tile mode writes wrap around the edges so tiles stay seamless.
       const setPixel = (x, y, c, a) => {
-        if (x >= 0 && x < W && y >= 0 && y < H && inSel(x, y)) grid[y][x] = { c, a };
+        if (tileMode) {
+          x = wrapX(x);
+          y = wrapY(y);
+        }
+        if (x >= 0 && x < W && y >= 0 && y < H && inSel(x, y)) grid[y][x] = c === null ? EMPTY : { c, a };
       };
       const brushCells = (x, y) => {
         const s = parseInt(bsize);
@@ -616,9 +687,13 @@
         redraw();
       };
       const redraw = () => {
+        const tw = W * PSIZE,
+          th = H * PSIZE;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.globalAlpha = 1;
         ctx.fillStyle = "#808080";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (tileMode) ctx.translate(tw, th);
         if (document.getElementById("aOnion").checked && frames.length > 1) {
           const P = flat((cf - 1 + frames.length) % frames.length);
           for (let y = 0; y < H; y++)
@@ -658,38 +733,57 @@
         for (let i = 0; i <= W; i++) {
           ctx.beginPath();
           ctx.moveTo(i * PSIZE, 0);
-          ctx.lineTo(i * PSIZE, canvas.height);
+          ctx.lineTo(i * PSIZE, th);
           ctx.stroke();
         }
         for (let i = 0; i <= H; i++) {
           ctx.beginPath();
           ctx.moveTo(0, i * PSIZE);
-          ctx.lineTo(canvas.width, i * PSIZE);
+          ctx.lineTo(tw, i * PSIZE);
           ctx.stroke();
         }
-        if (symX || symY) {
+        if (symX || symY || symD1 || symD2) {
+          const m = Math.min(tw, th) / 2;
           ctx.strokeStyle = "rgba(255,119,168,0.85)";
           ctx.lineWidth = 2;
           ctx.beginPath();
           if (symX) {
-            ctx.moveTo((W / 2) * PSIZE, 0);
-            ctx.lineTo((W / 2) * PSIZE, canvas.height);
+            ctx.moveTo(tw / 2, 0);
+            ctx.lineTo(tw / 2, th);
           }
           if (symY) {
-            ctx.moveTo(0, (H / 2) * PSIZE);
-            ctx.lineTo(canvas.width, (H / 2) * PSIZE);
+            ctx.moveTo(0, th / 2);
+            ctx.lineTo(tw, th / 2);
+          }
+          if (symD1) {
+            ctx.moveTo(tw / 2 - m, th / 2 - m);
+            ctx.lineTo(tw / 2 + m, th / 2 + m);
+          }
+          if (symD2) {
+            ctx.moveTo(tw / 2 + m, th / 2 - m);
+            ctx.lineTo(tw / 2 - m, th / 2 + m);
           }
           ctx.stroke();
+          ctx.lineWidth = 1;
+        }
+        if (tileMode) {
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          for (let j = 0; j < 3; j++)
+            for (let i = 0; i < 3; i++) if (i !== 1 || j !== 1) ctx.drawImage(canvas, tw, th, tw, th, i * tw, j * th, tw, th);
+          ctx.translate(tw, th);
+          ctx.strokeStyle = "#ff2020";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(0, 0, tw, th);
           ctx.lineWidth = 1;
         }
         drawSel();
       };
       const drawPreview = (x, y) => {
         const a = ctx.globalAlpha;
-        ctx.globalAlpha = 0.6 * alpha;
-        ctx.fillStyle = color;
+        ctx.globalAlpha = tool === "eraser" ? 0.45 : 0.6 * alpha;
+        ctx.fillStyle = tool === "eraser" ? "#ffffff" : color;
         mirrorCells(brushCells(x, y)).forEach(([px, py]) => {
-          if (px >= 0 && px < W && py >= 0 && py < H) ctx.fillRect(px * PSIZE, py * PSIZE, PSIZE, PSIZE);
+          if (tileMode || (px >= 0 && px < W && py >= 0 && py < H)) ctx.fillRect(px * PSIZE, py * PSIZE, PSIZE, PSIZE);
         });
         ctx.globalAlpha = a;
       };
@@ -710,12 +804,18 @@
         }
         if (pointers.size > 2 || gestureLock) return;
         if (e.pointerType === "mouse" && e.button !== 0) return;
-        const [x, y] = getCoords(e);
-        if (x < 0 || x >= W || y < 0 || y >= H) return;
+        let [x, y] = getCoords(e);
+        const freehand = tool === "pen" || tool === "eraser";
+        if (tileMode && !freehand) {
+          x = wrapX(x);
+          y = wrapY(y);
+        }
+        if (!(tileMode && freehand) && (x < 0 || x >= W || y < 0 || y >= H)) return;
         downUndoLen = undoStack.length;
         if (tool !== "move") pasteFloat = null;
-        if (["pen", "bucket", "replace", ...SHAPES].includes(tool)) {
-          const why = paintBlocker(x, y);
+        if (["pen", "eraser", "bucket", "replace", "move", ...SHAPES].includes(tool) && layerLocked()) return;
+        if (["pen", "eraser", "bucket", "replace", ...SHAPES].includes(tool)) {
+          const why = paintBlocker(wrapX(x), wrapY(y));
           if (why) setStatus(why);
           else if (document.getElementById("status").textContent.startsWith("⚠")) setStatus("");
         }
@@ -742,7 +842,9 @@
         checkpoint();
         drawing = true;
         lastPt = [x, y];
-        draw(x, y, color, alpha);
+        strokePath = [];
+        strokeCell(x, y);
+        redraw();
       });
       // Second finger down: whatever the first finger started becomes a pinch/pan gesture instead.
       const startGesture = () => {
@@ -775,8 +877,8 @@
         }
         if (gestureLock) return;
         const [x, y] = getCoords(e);
-        const cx0 = Math.max(0, Math.min(W - 1, x)),
-          cy0 = Math.max(0, Math.min(H - 1, y));
+        const cx0 = tileMode ? wrapX(x) : Math.max(0, Math.min(W - 1, x)),
+          cy0 = tileMode ? wrapY(y) : Math.max(0, Math.min(H - 1, y));
         if (moveBase) return applyMove(x, y);
         redraw();
         if (selecting) {
@@ -785,9 +887,9 @@
         } else if (shapeStart) {
           shapeCur = [cx0, cy0];
           drawShapePreview();
-        } else if (tool === "pen" || SHAPES.includes(tool)) drawPreview(x, y);
-        if (drawing && tool === "pen" && e.buttons === 1) {
-          lineCells(...(lastPt || [x, y]), x, y).forEach(([cx, cy]) => drawBrush(cx, cy, color, alpha));
+        } else if (tool === "pen" || tool === "eraser" || SHAPES.includes(tool)) drawPreview(x, y);
+        if (drawing && (tool === "pen" || tool === "eraser") && e.buttons === 1) {
+          lineCells(...(lastPt || [x, y]), x, y).forEach(([cx, cy]) => strokeCell(cx, cy));
           lastPt = [x, y];
           redraw();
         }
@@ -841,6 +943,7 @@
         return { r: Math.round(255 * f(0)), g: Math.round(255 * f(8)), b: Math.round(255 * f(4)) };
       };
       const clearCanvas = () => {
+        if (layerLocked()) return;
         checkpoint();
         for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (inSel(x, y)) grid[y][x] = EMPTY;
         redraw();
@@ -890,7 +993,7 @@
         );
         dl(new Blob([bytes], { type: "application/octet-stream" }), "pixel_art.bin");
       };
-      const downloadImage = () => {
+      const pngCanvas = () => {
         const keyBlack = document.getElementById("blackAlpha").checked;
         const oc = document.createElement("canvas");
         oc.width = W;
@@ -917,7 +1020,7 @@
           }
         }
         octx.putImageData(id, 0, 0);
-        scaleCanvas(oc).toBlob((b) => dl(b, "pixel_art.png"));
+        return scaleCanvas(oc, true);
       };
       const toHsl = (c) => {
         if (c.startsWith("hsl")) {
@@ -1154,6 +1257,7 @@
         document.getElementById("colorPreview").style.background = hex;
         document.querySelectorAll(".sw").forEach((x) => x.classList.remove("sel"));
         if (el) el.classList.add("sel");
+        refreshColText();
       };
       const showPalette = (name) => {
         const cols = [...new Set(PALETTES[name])].sort((a, b) => lum(a) - lum(b));
@@ -1234,6 +1338,7 @@
       });
       const fexp = (f = cf) => fin(f).map((r) => r.map((p) => (p.e ? { c: "#000000", a: 0 } : p)));
       const applyGlow = () => {
+        if (layerLocked()) return;
         const R = parseInt(document.getElementById("fxSlider").value);
         snapGrid();
         const m = contentMap();
@@ -1286,8 +1391,8 @@
         W = w;
         H = h;
         PSIZE = Math.max(1, Math.floor(Math.min(640 / w, 512 / h)));
-        canvas.width = w * PSIZE;
-        canvas.height = h * PSIZE;
+        canvas.width = (tileMode ? 3 : 1) * w * PSIZE;
+        canvas.height = (tileMode ? 3 : 1) * h * PSIZE;
         selMask = null;
         pasteFloat = null;
         updSelUI();
@@ -1530,6 +1635,14 @@
       const updSelUI = () => {
         const el = document.getElementById("selOpts");
         if (el) el.style.display = tool === "select" || tool === "wand" || selMask ? "grid" : "none";
+        const info = document.getElementById("selInfo");
+        if (!info) return;
+        const b = selMask && bboxOf(selMask);
+        info.textContent = b
+          ? `Selección: ${b.x1 - b.x0 + 1} × ${b.y1 - b.y0 + 1} px (${selMask.flat().filter(Boolean).length} píxeles), desde x ${b.x0}, y ${b.y0}`
+          : selMask
+            ? "Selección vacía"
+            : "";
       };
       const drawSel = () => {
         if (!selMask) return;
@@ -1692,12 +1805,55 @@
           const b = document.createElement("button");
           b.className = l === cl ? "active" : "";
           b.textContent = layers[l].name;
+          b.style.width = "auto";
+          b.style.flex = "1 1 90px";
           b.onclick = () => {
             cl = l;
             selCel();
           };
-          row.appendChild(cb);
-          row.appendChild(b);
+          const rn = document.createElement("button");
+          rn.className = "mini";
+          rn.textContent = "✏";
+          rn.title = "Renombrar capa";
+          rn.onclick = () => {
+            const inp = document.createElement("input");
+            inp.type = "text";
+            inp.value = layers[l].name;
+            inp.maxLength = 24;
+            inp.style.flex = "1 1 90px";
+            inp.style.minWidth = "0";
+            let closed = false;
+            const done = (save) => {
+              if (closed) return;
+              closed = true;
+              const name = inp.value.trim();
+              if (save && name && name !== layers[l].name) {
+                checkpoint();
+                layers[l].name = name;
+              }
+              renderLayers();
+            };
+            inp.onkeydown = (e) => {
+              if (e.key === "Enter") done(true);
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                done(false);
+              }
+            };
+            inp.onblur = () => done(true);
+            row.replaceChild(inp, b);
+            inp.focus();
+            inp.select();
+          };
+          const lk = document.createElement("button");
+          lk.className = "mini" + (layers[l].locked ? " active" : "");
+          lk.textContent = layers[l].locked ? "🔒" : "🔓";
+          lk.title = layers[l].locked ? "Capa bloqueada: tocá para desbloquear" : "Bloquear capa (no se puede modificar)";
+          lk.onclick = () => {
+            layers[l].locked = !layers[l].locked;
+            markDirty();
+            renderLayers();
+          };
           const bs = document.createElement("select");
           bs.title = "Modo de fusión";
           bs.style.width = "120px";
@@ -1715,7 +1871,6 @@
             redraw();
             updateExport();
           };
-          row.appendChild(bs);
           const op = document.createElement("input");
           op.type = "range";
           op.min = 0;
@@ -1728,7 +1883,7 @@
             updateExport();
             markDirty();
           };
-          row.appendChild(op);
+          [cb, b, rn, lk, bs, op].forEach((el) => row.appendChild(el));
           ls.appendChild(row);
         }
       };
@@ -2397,6 +2552,7 @@
       };
       document.getElementById("iconToCanvas").onclick = () => {
         if (!iconPick || !iconPick.cells) return setStatus("Elegí uno de los diseños para cargarlo en el lienzo");
+        if (layerLocked()) return;
         checkpoint();
         const n = iconPick.cells.length,
           m = iconPick.cells[0].length,
@@ -2441,7 +2597,9 @@
         }
         return best;
       };
-      document.getElementById("imgBtn").onclick = () => document.getElementById("imgIn").click();
+      document.getElementById("imgBtn").onclick = () => {
+        if (!layerLocked()) document.getElementById("imgIn").click();
+      };
       document.getElementById("imgIn").onchange = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -2806,14 +2964,19 @@
           }
         return out;
       };
+      // Each enabled mirror doubles the set, so combinations give 2, 4 or 8 copies.
       const mirrorCells = (cells) => {
-        if (!symX && !symY) return cells;
-        const out = [];
-        cells.forEach(([x, y]) => {
-          out.push([x, y]);
-          if (symX) out.push([W - 1 - x, y]);
-          if (symY) out.push([x, H - 1 - y]);
-          if (symX && symY) out.push([W - 1 - x, H - 1 - y]);
+        if (!symX && !symY && !symD1 && !symD2) return cells;
+        const cx = (W - 1) / 2,
+          cy = (H - 1) / 2;
+        const refl = [];
+        if (symX) refl.push(([x, y]) => [W - 1 - x, y]);
+        if (symY) refl.push(([x, y]) => [x, H - 1 - y]);
+        if (symD1) refl.push(([x, y]) => [Math.round(cx + (y - cy)), Math.round(cy + (x - cx))]);
+        if (symD2) refl.push(([x, y]) => [Math.round(cx - (y - cy)), Math.round(cy - (x - cx))]);
+        let out = cells;
+        refl.forEach((r) => {
+          out = out.concat(out.map(r));
         });
         return out;
       };
@@ -2891,6 +3054,7 @@
           }
         for (let y = 0; y < H; y++) grid[y] = out[y];
         if (M) selMask = nm;
+        updSelUI();
         redraw();
         updateExport();
       };
@@ -2898,7 +3062,7 @@
       const paintBlocker = (x, y) => {
         if (!layers[cl].visible) return "⚠ La capa actual está oculta: activá su casilla en CAPAS";
         if ((layers[cl].opacity ?? 1) === 0) return "⚠ La capa actual tiene opacidad 0";
-        if (alpha === 0) return "⚠ La opacidad del color está en 0%";
+        if (alpha === 0 && tool !== "eraser") return "⚠ La opacidad del color está en 0%";
         if (selMask && !selMask[y][x])
           return "⚠ Estás fuera de la selección: tocá ✕ Quitar (o Esc) para pintar en todo el lienzo";
         return null;
@@ -2916,7 +3080,7 @@
       };
       const transformSel = (kind) => {
         const b = bboxOf(selMask);
-        if (!b) return;
+        if (!b || layerLocked()) return;
         checkpoint();
         const cx = (b.x0 + b.x1) / 2,
           cy = (b.y0 + b.y1) / 2;
@@ -2937,6 +3101,7 @@
       };
       const cutSel = () => {
         copySel();
+        if (layerLocked()) return;
         checkpoint();
         for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (inSel(x, y)) grid[y][x] = EMPTY;
         redraw();
@@ -2946,6 +3111,7 @@
       const selectTool = (name) => document.querySelector('.tool-btn[data-tool="' + name + '"]').click();
       const pasteClip = () => {
         if (!clip) return setStatus("No hay nada copiado");
+        if (layerLocked()) return;
         checkpoint();
         const under = grid.map((r) => r.slice()),
           nm = newMask(false);
@@ -2988,7 +3154,8 @@
         if (src === pxKey(nw)) return;
         checkpoint();
         const scope = document.getElementById("replScope").value;
-        const cels = scope === "layer" ? [grid] : scope === "frame" ? frames[cf] : frames.flat();
+        const open = (fr) => fr.filter((_, l) => !layers[l].locked);
+        const cels = scope === "layer" ? [grid] : scope === "frame" ? open(frames[cf]) : frames.flatMap(open);
         let n = 0;
         cels.forEach((g) => {
           for (let j = 0; j < H; j++)
@@ -3067,16 +3234,25 @@
       };
 
       // ---------- exportar GIF animado (codificador GIF89a propio, sin librerías)
-      const expScale = () => parseInt(document.getElementById("expScale").value) || 1;
-      const scaleCanvas = (src) => {
-        const k = expScale();
-        if (k === 1) return src;
+      // "xN" multiplies; a number is a target size in px (largest whole scale that fits, centered when padded).
+      const expSpec = () => {
+        const v = document.getElementById("expScale").value;
+        if (v[0] === "x") return { k: parseInt(v.slice(1)) || 1, box: 0 };
+        return { k: Math.max(1, Math.floor(parseInt(v) / Math.max(W, H))), box: parseInt(v) };
+      };
+      const expScale = () => expSpec().k;
+      const scaleCanvas = (src, pad) => {
+        const { k, box } = expSpec();
+        const w = src.width * k,
+          h = src.height * k;
+        const fit = pad && box && w <= box && h <= box;
+        if (k === 1 && !fit) return src;
         const c = document.createElement("canvas");
-        c.width = src.width * k;
-        c.height = src.height * k;
+        c.width = fit ? box : w;
+        c.height = fit ? box : h;
         const g = c.getContext("2d");
         g.imageSmoothingEnabled = false;
-        g.drawImage(src, 0, 0, c.width, c.height);
+        g.drawImage(src, Math.floor((c.width - w) / 2), Math.floor((c.height - h) / 2), w, h);
         return c;
       };
       const lzw = (idx, minCode) => {
@@ -3258,7 +3434,7 @@
           return pasteClip();
         }
         const dir = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] }[k];
-        if (tool === "move" && dir) {
+        if (tool === "move" && dir && !layerLocked()) {
           e.preventDefault();
           checkpoint();
           transformFrom(baseNow(), (x, y) => [x - dir[0], y - dir[1]]);
@@ -3339,7 +3515,169 @@
       };
       document.getElementById("sendKey").onclick = sendToKeychain;
 
+      // ---------- capas bloqueadas
+      const layerLocked = () => {
+        if (!layers[cl].locked) return false;
+        setStatus("⚠ La capa actual está bloqueada 🔒: tocá el candado en CAPAS para editarla");
+        return true;
+      };
+
+      // ---------- trazo del pincel y la goma, con "pixel perfect"
+      const penColor = () => (tool === "eraser" ? null : color);
+      const cellAt = (x, y) => {
+        if (tileMode) {
+          x = wrapX(x);
+          y = wrapY(y);
+        }
+        return x >= 0 && x < W && y >= 0 && y < H ? grid[y][x] : null;
+      };
+      const putCell = (x, y, v) => {
+        if (tileMode) {
+          x = wrapX(x);
+          y = wrapY(y);
+        }
+        if (x >= 0 && x < W && y >= 0 && y < H && inSel(x, y)) grid[y][x] = v;
+      };
+      // Pixel perfect: when three consecutive stroke cells form an "L", the corner cell is undone,
+      // so 1-pixel lines never get doubled steps.
+      const strokeCell = (x, y) => {
+        const fine = pixelPerfect && parseInt(bsize) === 1 && brush === "square" && !rotN;
+        if (!fine) return drawBrush(x, y, penColor(), alpha);
+        const last = strokePath[strokePath.length - 1];
+        if (last && last.x === x && last.y === y) return;
+        const cells = mirrorCells([[x, y]]);
+        const saved = cells.map(([cx, cy]) => [cx, cy, cellAt(cx, cy)]);
+        cells.forEach(([cx, cy]) => setPixel(cx, cy, penColor(), alpha));
+        strokePath.push({ x, y, saved });
+        const n = strokePath.length;
+        if (n < 3) return;
+        const a = strokePath[n - 3],
+          b = strokePath[n - 2],
+          c = strokePath[n - 1];
+        const touch = (p, q) => Math.abs(p.x - q.x) + Math.abs(p.y - q.y) === 1;
+        if (!touch(a, b) || !touch(b, c) || Math.abs(a.x - c.x) !== 1 || Math.abs(a.y - c.y) !== 1) return;
+        b.saved.forEach(([cx, cy, v]) => {
+          if (v) putCell(cx, cy, v);
+        });
+        strokePath.splice(n - 2, 1);
+        // With symmetry on, the undone corner can overlap cells of its neighbours: paint those again.
+        [a, c].forEach((q) => mirrorCells([[q.x, q.y]]).forEach(([cx, cy]) => setPixel(cx, cy, penColor(), alpha)));
+      };
+      document.getElementById("ppBtn").onclick = (e) => {
+        pixelPerfect = !pixelPerfect;
+        e.currentTarget.classList.toggle("active", pixelPerfect);
+      };
+      document.getElementById("symD1").onclick = (e) => {
+        symD1 = !symD1;
+        e.currentTarget.classList.toggle("active", symD1);
+        redraw();
+      };
+      document.getElementById("symD2").onclick = (e) => {
+        symD2 = !symD2;
+        e.currentTarget.classList.toggle("active", symD2);
+        redraw();
+      };
+
+      // ---------- animación: mostrar/ocultar y saltar al principio o al final
+      const setAnimUI = (on) => {
+        document.getElementById("anim").style.display = on ? "flex" : "none";
+        document.getElementById("animToggle").classList.toggle("active", on);
+        store.set("pae-anim", on ? "1" : "0");
+        if (!on) pausePlay();
+      };
+      document.getElementById("animToggle").onclick = () =>
+        setAnimUI(document.getElementById("anim").style.display === "none");
+      document.getElementById("aFirst").onclick = () => {
+        pausePlay();
+        setFrame(0);
+      };
+      document.getElementById("aLast").onclick = () => {
+        pausePlay();
+        setFrame(frames.length - 1);
+      };
+
+      // ---------- modo tile
+      document.getElementById("tileToggle").onclick = (e) => {
+        tileMode = !tileMode;
+        e.currentTarget.classList.toggle("active", tileMode);
+        canvas.width = (tileMode ? 3 : 1) * W * PSIZE;
+        canvas.height = (tileMode ? 3 : 1) * H * PSIZE;
+        applyZoom();
+        redraw();
+        setStatus(tileMode ? "Modo tile: el recuadro rojo es tu dibujo; lo demás son copias" : "");
+      };
+
+      // ---------- color por código (hex, rgba, hsla) y selector del sistema
+      const cssCtx = document.createElement("canvas").getContext("2d");
+      // The canvas normalizes any CSS color to "#rrggbb" or "rgba(r, g, b, a)"; invalid input leaves it unchanged.
+      const parseCss = (str) => {
+        cssCtx.fillStyle = "#000001";
+        cssCtx.fillStyle = str;
+        const v = cssCtx.fillStyle;
+        cssCtx.fillStyle = "#000002";
+        cssCtx.fillStyle = str;
+        if (v !== cssCtx.fillStyle) return null;
+        if (v[0] === "#")
+          return { r: parseInt(v.slice(1, 3), 16), g: parseInt(v.slice(3, 5), 16), b: parseInt(v.slice(5, 7), 16), a: 1 };
+        const m = v.match(/[\d.]+/g).map(Number);
+        return { r: m[0], g: m[1], b: m[2], a: m[3] ?? 1 };
+      };
+      const refreshColText = () => {
+        const txt = document.getElementById("colText");
+        const c = rgbOf(color),
+          hex = toHex(c.r, c.g, c.b);
+        document.getElementById("colorNative").value = hex;
+        if (document.activeElement === txt) return;
+        const fmt = document.getElementById("colFmt").value;
+        if (fmt === "rgba") txt.value = `rgba(${c.r}, ${c.g}, ${c.b}, ${alpha})`;
+        else if (fmt === "hsla") {
+          const h = toHsl(hex);
+          txt.value = `hsla(${h.h}, ${h.s}%, ${h.l}%, ${alpha})`;
+        } else
+          txt.value =
+            hex +
+            (alpha < 1
+              ? Math.round(alpha * 255)
+                  .toString(16)
+                  .padStart(2, "0")
+              : "");
+      };
+      const applyTypedColor = () => {
+        const txt = document.getElementById("colText");
+        const c = parseCss(txt.value.trim());
+        if (!c) return setStatus("⚠ No entendí ese color. Ejemplos: #ff8800, rgb(255,136,0), hsla(32,100%,50%,0.5)");
+        document.getElementById("alphaSlider").value = Math.round(c.a * 100);
+        txt.blur();
+        pickHex(toHex(c.r, c.g, c.b));
+      };
+      document.getElementById("colText").addEventListener("change", applyTypedColor);
+      document.getElementById("colText").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") e.target.blur();
+      });
+      document.getElementById("colFmt").addEventListener("change", refreshColText);
+      document.getElementById("colorPreview").onclick = () => document.getElementById("colorNative").click();
+      document.getElementById("colorNative").addEventListener("input", (e) => pickHex(e.target.value));
+
+      // ---------- PNG: descargar o compartir (mail, mensajes) desde el menú del sistema
+      const downloadImage = () => pngCanvas().toBlob((b) => dl(b, "pixel_art.png"));
+      const sharePNG = async () => {
+        // Built synchronously so the share sheet still counts as started by the tap (Safari requires it).
+        const bin = atob(pngCanvas().toDataURL("image/png").split(",")[1]);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const file = new File([bytes], "pixel_art.png", { type: "image/png" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file], title: "Pixel art" });
+          } catch (_) {}
+          return;
+        }
+        dl(new Blob([bytes], { type: "image/png" }), "pixel_art.png");
+        setStatus("Este navegador no comparte archivos: se descargó el PNG para adjuntarlo al mail");
+      };
+
       loadAutosave();
+      setAnimUI(store.get("pae-anim") === "1" || frames.length > 1);
       applyZoom();
       updateColor();
       redraw();
