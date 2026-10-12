@@ -3,7 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#1a1a2e" />
+    <meta name="theme-color" content="#2a2a2e" />
+    <script>
+      (function () {
+        var t = null;
+        try { t = localStorage.getItem("pae-theme"); } catch (e) {}
+        if (t !== "light" && t !== "dark")
+          t = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        document.documentElement.dataset.theme = t;
+      })();
+    </script>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="PixelArt" />
@@ -11,15 +20,46 @@
     <link rel="apple-touch-icon" href="icon-180.png" />
     <title>Editor Pixel Art</title>
     <style>
+      /* Temas: gris oscuro (por defecto) y crema (claro). Se elige con el botón de la barra o según el sistema. */
+      :root,
+      :root[data-theme="dark"] {
+        --bg: #2a2a2e;
+        --bg2: #303036;
+        --panel: #37373e;
+        --ink: #f1ead8;
+        --ink-dim: #b3ab98;
+        --line: #0b0b0e;
+        --accent: #f2b84b;
+        --accent-ink: #2a2a2e;
+        --btn: #4a4a53;
+        --btn-hover: #5a5a64;
+        --field: #1e1e23;
+      }
+      :root[data-theme="light"] {
+        --bg: #efe4c8;
+        --bg2: #e6d7b0;
+        --panel: #f8f0d9;
+        --ink: #3a2e22;
+        --ink-dim: #7a6a55;
+        --line: #3a2e22;
+        --accent: #c2573a;
+        --accent-ink: #fff6e0;
+        --btn: #fbf4de;
+        --btn-hover: #f1e4bf;
+        --field: #fffaeb;
+      }
       * {
         margin: 0;
         padding: 0;
         box-sizing: border-box;
       }
       body {
-        font-family: Arial, sans-serif;
-        background: #1a1a2e;
-        color: #fff;
+        font-family: "Courier New", Courier, ui-monospace, monospace;
+        font-weight: bold;
+        background-color: var(--bg);
+        background-image: repeating-conic-gradient(var(--bg2) 0% 25%, var(--bg) 0% 50%);
+        background-size: 16px 16px;
+        color: var(--ink);
         display: grid;
         grid-template-columns: 1fr 420px;
         height: 100vh;
@@ -27,14 +67,16 @@
         padding: 20px;
       }
       canvas {
-        border: 2px solid #64b5f6;
+        border: 3px solid var(--line);
+        box-shadow: 6px 6px 0 var(--line);
         background: #0a0e27;
         image-rendering: pixelated;
         cursor: crosshair;
       }
       .sidebar {
-        background: #16213e;
-        border-radius: 12px;
+        background: var(--panel);
+        border: 3px solid var(--line);
+        box-shadow: 6px 6px 0 var(--line);
         padding: 20px;
         display: flex;
         flex-direction: column;
@@ -44,6 +86,7 @@
       h1 {
         font-size: 24px;
         margin-bottom: 20px;
+        text-shadow: 3px 3px 0 var(--accent);
       }
       .section {
         display: flex;
@@ -52,27 +95,35 @@
       }
       .section h2 {
         font-size: 13px;
-        color: #64b5f6;
-        border-bottom: 1px solid #2a3a5a;
+        color: var(--accent);
+        border-bottom: 2px dashed var(--line);
         padding-bottom: 8px;
         text-transform: uppercase;
       }
       button {
-        background: #0f3460;
-        border: 1px solid #64b5f6;
-        color: #fff;
+        font: inherit;
+        background: var(--btn);
+        border: 2px solid var(--line);
+        box-shadow: 2px 2px 0 var(--line);
+        color: var(--ink);
         padding: 8px 12px;
-        border-radius: 6px;
+        border-radius: 0;
         cursor: pointer;
         font-size: 12px;
         width: 100%;
       }
       button:hover {
-        background: #1a4d7a;
+        background: var(--btn-hover);
+      }
+      button:active:not(:disabled) {
+        transform: translate(2px, 2px);
+        box-shadow: none;
       }
       button.active {
-        background: #64b5f6;
-        color: #1a1a2e;
+        background: var(--accent);
+        color: var(--accent-ink);
+        transform: translate(2px, 2px);
+        box-shadow: none;
       }
       .brush-grid {
         display: grid;
@@ -89,22 +140,22 @@
       .color-preview {
         width: 100%;
         height: 40px;
-        border-radius: 6px;
-        border: 2px solid #64b5f6;
+        border-radius: 0;
+        border: 3px solid var(--line);
+        box-shadow: 3px 3px 0 var(--line);
       }
       input[type="range"] {
         width: 100%;
         height: 6px;
-        background: #2a3a5a;
-        border-radius: 3px;
+        accent-color: var(--accent);
       }
       textarea {
         width: 100%;
         height: 60px;
-        background: #0a0e27;
-        border: 1px solid #64b5f6;
-        border-radius: 6px;
-        color: #fff;
+        background: var(--field);
+        border: 2px solid var(--line);
+        border-radius: 0;
+        color: var(--ink);
         font-family: monospace;
         font-size: 10px;
         padding: 8px;
@@ -117,11 +168,12 @@
         margin-bottom: 5px;
       }
       select {
-        background: #0f3460;
-        border: 1px solid #64b5f6;
-        color: #fff;
+        font: inherit;
+        background: var(--btn);
+        border: 2px solid var(--line);
+        color: var(--ink);
         padding: 8px;
-        border-radius: 6px;
+        border-radius: 0;
         font-size: 12px;
         width: 100%;
       }
@@ -133,22 +185,23 @@
       .sw {
         height: 24px;
         cursor: pointer;
-        border: 1px solid #0a0e27;
-        border-radius: 2px;
+        border: 1px solid #0b0b0e;
+        border-radius: 0;
       }
       .sw:hover {
-        outline: 2px solid #fff;
+        outline: 2px solid var(--ink);
         z-index: 1;
       }
       .sw.sel {
-        outline: 2px solid #64b5f6;
+        outline: 3px solid var(--accent);
       }
       input[type="number"] {
-        background: #0f3460;
-        border: 1px solid #64b5f6;
-        color: #fff;
+        font: inherit;
+        background: var(--field);
+        border: 2px solid var(--line);
+        color: var(--ink);
         padding: 6px;
-        border-radius: 6px;
+        border-radius: 0;
       }
       .mini {
         width: auto;
@@ -161,11 +214,12 @@
         flex-wrap: wrap;
       }
       input[type="text"] {
-        background: #0f3460;
-        border: 1px solid #64b5f6;
-        color: #fff;
+        font: inherit;
+        background: var(--field);
+        border: 2px solid var(--line);
+        color: var(--ink);
         padding: 6px;
-        border-radius: 6px;
+        border-radius: 0;
         font-size: 12px;
       }
       .color-preview {
@@ -214,7 +268,7 @@
         width: 100%;
         image-rendering: pixelated;
         display: block;
-        border-radius: 6px;
+        border-radius: 0;
       }
       #topBar {
         display: flex;
@@ -226,7 +280,7 @@
         max-width: 680px;
       }
       #status {
-        color: #9ab;
+        color: var(--ink-dim);
         font-size: 11px;
         margin-left: auto;
       }
@@ -235,7 +289,6 @@
         max-width: 680px;
         max-height: 68vh;
         overflow: auto;
-        border-radius: 6px;
       }
       #viewport canvas {
         display: block;
@@ -248,7 +301,7 @@
       }
       .hint {
         font-size: 11px;
-        color: #aaa;
+        color: var(--ink-dim);
       }
       .layer-row input[type="range"] {
         width: 70px;
@@ -283,6 +336,7 @@
         <button id="zoomFit" class="mini" title="Ajustar a la pantalla">⤢ Ajustar</button>
         <button id="animToggle" class="mini" title="Muestra u oculta los controles de frames y animación">🎞 Animación</button>
         <button id="tileToggle" class="mini" title="Repite el dibujo alrededor para diseñar mosaicos sin costuras">▦ Tile</button>
+        <button id="themeBtn" class="mini" title="Cambia entre el modo crema (claro) y el gris oscuro">☀ Claro</button>
         <span id="status"></span>
       </div>
       <div id="viewport"><canvas id="canvas"></canvas></div>
@@ -310,7 +364,7 @@
       </div>
       <div id="layersPanel" style="width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 6px">
         <div style="display: flex; gap: 6px; align-items: center">
-          <strong style="color: #64b5f6; font-size: 13px">CAPAS</strong><button id="lAdd" class="mini">+ Capa</button
+          <strong style="color: var(--accent); font-size: 13px">CAPAS</strong><button id="lAdd" class="mini">+ Capa</button
           ><button id="lDel" class="mini" title="Borrar capa">🗑</button
           ><button id="lUp" class="mini" title="Subir capa">↑</button
           ><button id="lDown" class="mini" title="Bajar capa">↓</button
@@ -339,7 +393,7 @@
           ><input id="ch" type="number" min="1" max="256" value="64" style="width: 70px" /><span>px</span
           ><button id="customApply" style="width: auto">Aplicar</button>
         </div>
-        <div id="szInfo" style="font-size: 11px; color: #aaa">
+        <div id="szInfo" style="font-size: 11px; color: var(--ink-dim)">
           Zona de dibujo del llavero (centrada en la OLED 128x64)
         </div>
       </div>
@@ -518,7 +572,7 @@
         <h2>Paletas</h2>
         <select id="paletteSel"></select>
         <div id="swatches"></div>
-        <div id="palInfo" style="font-size: 11px; color: #aaa"></div>
+        <div id="palInfo" style="font-size: 11px; color: var(--ink-dim)"></div>
         <div class="tool-grid">
           <button id="palAdd">➕ Agregar color a Mi paleta</button>
           <button id="palClear">🗑 Vaciar Mi paleta</button>
@@ -4302,6 +4356,24 @@
       applyZoom();
       updateColor();
       redraw();
+    </script>
+    <script>
+      (function () {
+        var btn = document.getElementById("themeBtn");
+        var meta = document.querySelector('meta[name="theme-color"]');
+        function pinta() {
+          var oscuro = document.documentElement.dataset.theme !== "light";
+          btn.textContent = oscuro ? "☀ Claro" : "☾ Oscuro";
+          meta.content = oscuro ? "#2a2a2e" : "#efe4c8";
+        }
+        btn.addEventListener("click", function () {
+          var nuevo = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+          document.documentElement.dataset.theme = nuevo;
+          try { localStorage.setItem("pae-theme", nuevo); } catch (e) {}
+          pinta();
+        });
+        pinta();
+      })();
     </script>
   </body>
 </html>
