@@ -313,7 +313,8 @@
           <strong style="color: #64b5f6; font-size: 13px">CAPAS</strong><button id="lAdd" class="mini">+ Capa</button
           ><button id="lDel" class="mini" title="Borrar capa">🗑</button
           ><button id="lUp" class="mini" title="Subir capa">↑</button
-          ><button id="lDown" class="mini" title="Bajar capa">↓</button>
+          ><button id="lDown" class="mini" title="Bajar capa">↓</button
+          ><button id="gAdd" class="mini" title="Crea una carpeta con la capa actual">📁 + Carpeta</button>
         </div>
         <div id="layerList" style="display: flex; flex-direction: column; gap: 4px"></div>
       </div>
@@ -356,6 +357,10 @@
           <button class="tool-btn" data-tool="move">✋ Mover</button>
           <button class="tool-btn" data-tool="select">⬚ Selección</button>
           <button class="tool-btn" data-tool="wand">🪄 Varita (mismo color)</button>
+          <button class="tool-btn" data-tool="transform">⛶ Transformar</button>
+          <button class="tool-btn" data-tool="text">🔤 Texto</button>
+          <button class="tool-btn" data-tool="blur">💧 Desenfocar</button>
+          <button class="tool-btn" data-tool="smudge">👆 Dedo</button>
         </div>
         <div id="shapeOpts" style="display: none">
           <button id="shapeFill" title="Rectángulo y elipse rellenos">◼ Relleno</button>
@@ -370,6 +375,37 @@
             Origen: el color del píxel que toques en el lienzo. Destino: el color elegido ahora en “Color”. Respeta la
             selección y saltea las capas bloqueadas.
           </div>
+        </div>
+        <div id="fxBrushOpts" class="hint" style="display: none">
+          Pasá el dedo sobre el dibujo. La fuerza se regula con “Opacidad” (en Color) y el tamaño con “Radio”.
+        </div>
+        <div id="textOpts" style="display: none; flex-direction: column; gap: 6px">
+          <input type="text" id="txtValue" placeholder="Escribí el texto" maxlength="60" />
+          <div style="display: flex; gap: 6px">
+            <select id="txtFont" title="Tipografía">
+              <option value="f35">Chica 3×5</option>
+              <option value="f57" selected>Mediana 5×7</option>
+            </select>
+            <select id="txtScale" title="Tamaño">
+              <option value="1">×1</option>
+              <option value="2">×2</option>
+              <option value="3">×3</option>
+              <option value="4">×4</option>
+            </select>
+          </div>
+          <div class="hint">
+            Tocá en el lienzo donde va la esquina de arriba a la izquierda del texto. Usa el color actual. Solo
+            mayúsculas, números y signos.
+          </div>
+        </div>
+        <div id="xfOpts" style="display: none; flex-direction: column; gap: 6px">
+          <div class="tool-grid">
+            <button id="xfScale" class="active" title="Las 4 esquinas mantienen el rectángulo">⤢ Escalar</button>
+            <button id="xfFree" title="Cada esquina se mueve por separado: da perspectiva">◇ Deformar libre</button>
+            <button id="xfReset" title="Vuelve al tamaño y la forma originales">↺ Reiniciar</button>
+            <button id="xfDone">✓ Listo</button>
+          </div>
+          <div class="hint">Arrastrá las 4 esquinas celestes de la selección (o de todo lo dibujado en la capa).</div>
         </div>
         <div id="moveOpts" class="hint" style="display: none">
           Arrastrá para mover la selección, o la capa entera si no hay selección. Con teclado: flechas.
@@ -489,6 +525,18 @@
         </button>
       </div>
       <div class="section">
+        <h2>Filtros</h2>
+        <div class="tool-grid">
+          <button onclick="applyFilter('blur')" title="Suaviza mezclando cada píxel con sus vecinos">💧 Desenfocar</button>
+          <button onclick="applyFilter('sharpen')" title="Marca más los cambios de color">🔪 Enfocar</button>
+          <button onclick="applyFilter('edges')" title="Deja solo los píxeles del borde de cada forma">▢ Solo bordes</button>
+          <button onclick="applyFilter('despeckle')" title="Borra píxeles sueltos, útil después de importar una foto">
+            🧹 Quitar puntos sueltos
+          </button>
+        </div>
+        <div class="hint">Se aplican a la selección o, si no hay, a la capa actual. Se pueden deshacer.</div>
+      </div>
+      <div class="section">
         <h2>Efectos</h2>
         <label>Radio del glow: <span id="fxVal">2</span></label
         ><input type="range" id="fxSlider" min="1" max="5" value="2" /><label
@@ -580,6 +628,8 @@
         tileMode = false,
         pixelPerfect = false,
         strokePath = [],
+        xf = null,
+        smBuf = new Map(),
         shapeFill = false,
         zoom = 1,
         pasteFloat = null,
@@ -592,6 +642,8 @@
         moveBase = null,
         saveT = null;
       const pointers = new Map();
+      const collapsedGroups = new Set();
+      const FREEHAND = ["pen", "eraser", "blur", "smudge"];
       const undoStack = [],
         redoStack = [];
       let tool = "pen",
@@ -777,11 +829,13 @@
           ctx.lineWidth = 1;
         }
         drawSel();
+        drawXf();
       };
       const drawPreview = (x, y) => {
         const a = ctx.globalAlpha;
-        ctx.globalAlpha = tool === "eraser" ? 0.45 : 0.6 * alpha;
-        ctx.fillStyle = tool === "eraser" ? "#ffffff" : color;
+        const ghost = tool !== "pen" && FREEHAND.includes(tool);
+        ctx.globalAlpha = ghost ? 0.45 : 0.6 * alpha;
+        ctx.fillStyle = ghost ? "#ffffff" : color;
         mirrorCells(brushCells(x, y)).forEach(([px, py]) => {
           if (tileMode || (px >= 0 && px < W && py >= 0 && py < H)) ctx.fillRect(px * PSIZE, py * PSIZE, PSIZE, PSIZE);
         });
@@ -805,16 +859,17 @@
         if (pointers.size > 2 || gestureLock) return;
         if (e.pointerType === "mouse" && e.button !== 0) return;
         let [x, y] = getCoords(e);
-        const freehand = tool === "pen" || tool === "eraser";
+        const freehand = FREEHAND.includes(tool);
         if (tileMode && !freehand) {
           x = wrapX(x);
           y = wrapY(y);
         }
-        if (!(tileMode && freehand) && (x < 0 || x >= W || y < 0 || y >= H)) return;
+        if (!(tileMode && freehand) && tool !== "transform" && (x < 0 || x >= W || y < 0 || y >= H)) return;
         downUndoLen = undoStack.length;
         if (tool !== "move") pasteFloat = null;
-        if (["pen", "eraser", "bucket", "replace", "move", ...SHAPES].includes(tool) && layerLocked()) return;
-        if (["pen", "eraser", "bucket", "replace", ...SHAPES].includes(tool)) {
+        if ([...FREEHAND, "bucket", "replace", "move", "text", "transform", ...SHAPES].includes(tool) && layerLocked())
+          return;
+        if (["pen", "eraser", "bucket", "replace", "text", ...SHAPES].includes(tool)) {
           const why = paintBlocker(wrapX(x), wrapY(y));
           if (why) setStatus(why);
           else if (document.getElementById("status").textContent.startsWith("⚠")) setStatus("");
@@ -832,6 +887,8 @@
         if (tool === "bucket") return bucketFill(x, y);
         if (tool === "replace") return replaceColor(x, y);
         if (tool === "move") return startMove(x, y);
+        if (tool === "text") return placeText(x, y);
+        if (tool === "transform") return xfDown(e);
         if (SHAPES.includes(tool)) {
           shapeStart = [x, y];
           shapeCur = [x, y];
@@ -843,6 +900,7 @@
         drawing = true;
         lastPt = [x, y];
         strokePath = [];
+        smBuf = new Map();
         strokeCell(x, y);
         redraw();
       });
@@ -879,6 +937,7 @@
         const [x, y] = getCoords(e);
         const cx0 = tileMode ? wrapX(x) : Math.max(0, Math.min(W - 1, x)),
           cy0 = tileMode ? wrapY(y) : Math.max(0, Math.min(H - 1, y));
+        if (xf && xf.drag !== null) return xfMove(e);
         if (moveBase) return applyMove(x, y);
         redraw();
         if (selecting) {
@@ -887,8 +946,9 @@
         } else if (shapeStart) {
           shapeCur = [cx0, cy0];
           drawShapePreview();
-        } else if (tool === "pen" || tool === "eraser" || SHAPES.includes(tool)) drawPreview(x, y);
-        if (drawing && (tool === "pen" || tool === "eraser") && e.buttons === 1) {
+        } else if (tool === "text") drawTextPreview(cx0, cy0);
+        else if (FREEHAND.includes(tool) || SHAPES.includes(tool)) drawPreview(x, y);
+        if (drawing && FREEHAND.includes(tool) && e.buttons === 1) {
           lineCells(...(lastPt || [x, y]), x, y).forEach(([cx, cy]) => strokeCell(cx, cy));
           lastPt = [x, y];
           redraw();
@@ -907,6 +967,7 @@
           commitRectSel();
         }
         if (shapeStart) commitShape();
+        if (xf) xf.drag = null;
         if (moveBase) canvas.style.cursor = "grab";
         moveBase = null;
         markDirty();
@@ -1786,12 +1847,110 @@
         });
         document.getElementById("aCount").value = frames.length;
       };
+      // Folders are just a shared `group` name on layers; a header row is shown above each run of grouped layers.
+      const groupMembers = (name) => layers.map((L, i) => (L.group === name ? i : -1)).filter((i) => i >= 0);
+      const newGroupName = () => {
+        let n = 1;
+        while (layers.some((L) => L.group === "Carpeta " + n)) n++;
+        return "Carpeta " + n;
+      };
+      const moveLayer = (from, to) => {
+        const cur = layers[cl];
+        frames.forEach((fr) => {
+          const [g] = fr.splice(from, 1);
+          fr.splice(to, 0, g);
+        });
+        const [m] = layers.splice(from, 1);
+        layers.splice(to, 0, m);
+        cl = layers.indexOf(cur);
+      };
+      // Inline rename shared by layers and folders: swaps `target` for a text field until Enter, Esc or blur.
+      const inlineRename = (row, target, value, onSave) => {
+        const inp = document.createElement("input");
+        inp.type = "text";
+        inp.value = value;
+        inp.maxLength = 24;
+        inp.style.flex = "1 1 90px";
+        inp.style.minWidth = "0";
+        let closed = false;
+        const done = (save) => {
+          if (closed) return;
+          closed = true;
+          const name = inp.value.trim();
+          if (save && name && name !== value) onSave(name);
+          renderLayers();
+        };
+        inp.onkeydown = (e) => {
+          if (e.key === "Enter") done(true);
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            done(false);
+          }
+        };
+        inp.onblur = () => done(true);
+        row.replaceChild(inp, target);
+        inp.focus();
+        inp.select();
+      };
+      const mini = (text, title, on) => {
+        const b = document.createElement("button");
+        b.className = "mini" + (on ? " active" : "");
+        b.textContent = text;
+        b.title = title;
+        return b;
+      };
+      const groupHeader = (name) => {
+        const ids = groupMembers(name);
+        const row = document.createElement("div");
+        row.className = "layer-row";
+        const fold = mini(collapsedGroups.has(name) ? "▸" : "▾", "Plegar o desplegar la carpeta");
+        fold.onclick = () => {
+          collapsedGroups.has(name) ? collapsedGroups.delete(name) : collapsedGroups.add(name);
+          renderLayers();
+        };
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = ids.every((i) => layers[i].visible);
+        cb.title = "Mostrar u ocultar toda la carpeta";
+        cb.onchange = () => {
+          ids.forEach((i) => (layers[i].visible = cb.checked));
+          markDirty();
+          renderLayers();
+          redraw();
+          updateExport();
+        };
+        const nm = document.createElement("button");
+        nm.textContent = "📁 " + name + " (" + ids.length + ")";
+        nm.title = "Tocá para renombrar la carpeta";
+        nm.style.width = "auto";
+        nm.style.flex = "1 1 90px";
+        nm.style.textAlign = "left";
+        nm.onclick = () =>
+          inlineRename(row, nm, name, (v) => {
+            checkpoint();
+            ids.forEach((i) => (layers[i].group = v));
+          });
+        const allLocked = ids.every((i) => layers[i].locked);
+        const lk = mini(allLocked ? "🔒" : "🔓", "Bloquear o desbloquear toda la carpeta", allLocked);
+        lk.onclick = () => {
+          ids.forEach((i) => (layers[i].locked = !allLocked));
+          markDirty();
+          renderLayers();
+        };
+        [fold, cb, nm, lk].forEach((el) => row.appendChild(el));
+        return row;
+      };
       const renderLayers = () => {
         const ls = document.getElementById("layerList");
         ls.innerHTML = "";
+        const names = [...new Set(layers.map((L) => L.group).filter(Boolean))];
         for (let l = layers.length - 1; l >= 0; l--) {
+          const grp = layers[l].group;
+          if (grp && (l === layers.length - 1 || layers[l + 1].group !== grp)) ls.appendChild(groupHeader(grp));
+          if (grp && collapsedGroups.has(grp)) continue;
           const row = document.createElement("div");
           row.className = "layer-row";
+          if (grp) row.style.marginLeft = "18px";
           const cb = document.createElement("input");
           cb.type = "checkbox";
           cb.checked = layers[l].visible;
@@ -1799,6 +1958,7 @@
           cb.onchange = () => {
             layers[l].visible = cb.checked;
             markDirty();
+            renderLayers();
             redraw();
             updateExport();
           };
@@ -1811,44 +1971,17 @@
             cl = l;
             selCel();
           };
-          const rn = document.createElement("button");
-          rn.className = "mini";
-          rn.textContent = "✏";
-          rn.title = "Renombrar capa";
-          rn.onclick = () => {
-            const inp = document.createElement("input");
-            inp.type = "text";
-            inp.value = layers[l].name;
-            inp.maxLength = 24;
-            inp.style.flex = "1 1 90px";
-            inp.style.minWidth = "0";
-            let closed = false;
-            const done = (save) => {
-              if (closed) return;
-              closed = true;
-              const name = inp.value.trim();
-              if (save && name && name !== layers[l].name) {
-                checkpoint();
-                layers[l].name = name;
-              }
-              renderLayers();
-            };
-            inp.onkeydown = (e) => {
-              if (e.key === "Enter") done(true);
-              if (e.key === "Escape") {
-                e.stopPropagation();
-                done(false);
-              }
-            };
-            inp.onblur = () => done(true);
-            row.replaceChild(inp, b);
-            inp.focus();
-            inp.select();
-          };
-          const lk = document.createElement("button");
-          lk.className = "mini" + (layers[l].locked ? " active" : "");
-          lk.textContent = layers[l].locked ? "🔒" : "🔓";
-          lk.title = layers[l].locked ? "Capa bloqueada: tocá para desbloquear" : "Bloquear capa (no se puede modificar)";
+          const rn = mini("✏", "Renombrar capa");
+          rn.onclick = () =>
+            inlineRename(row, b, layers[l].name, (v) => {
+              checkpoint();
+              layers[l].name = v;
+            });
+          const lk = mini(
+            layers[l].locked ? "🔒" : "🔓",
+            layers[l].locked ? "Capa bloqueada: tocá para desbloquear" : "Bloquear capa (no se puede modificar)",
+            layers[l].locked,
+          );
           lk.onclick = () => {
             layers[l].locked = !layers[l].locked;
             markDirty();
@@ -1883,13 +2016,37 @@
             updateExport();
             markDirty();
           };
-          [cb, b, rn, lk, bs, op].forEach((el) => row.appendChild(el));
+          const gs = document.createElement("select");
+          gs.title = "Carpeta de la capa";
+          gs.style.width = "120px";
+          gs.style.flex = "none";
+          [["", "Sin carpeta"], ...names.map((n) => [n, "📁 " + n]), ["\u0000new", "➕ Nueva carpeta"]].forEach(([v, t]) => {
+            const o = document.createElement("option");
+            o.value = v;
+            o.textContent = t;
+            gs.appendChild(o);
+          });
+          gs.value = grp || "";
+          gs.onchange = () => {
+            checkpoint();
+            const v = gs.value;
+            if (!v) delete layers[l].group;
+            else if (v === "\u0000new") layers[l].group = newGroupName();
+            else {
+              const top = Math.max(...groupMembers(v).filter((i) => i !== l));
+              layers[l].group = v;
+              moveLayer(l, l < top ? top : top + 1); // sits right above the folder's top layer
+            }
+            selCel();
+          };
+          [cb, b, rn, lk, bs, op, gs].forEach((el) => row.appendChild(el));
           ls.appendChild(row);
         }
       };
       const selCel = () => {
         grid = frames[cf][cl];
         pasteFloat = null;
+        xf = null;
         renderLayers();
         renderFrames();
         redraw();
@@ -2674,6 +2831,7 @@
         layerSeq,
         layers: layers.map((l) => ({ ...l })),
         frames: frames.map((fr) => fr.map((g) => g.map((r) => r.slice()))),
+        sel: selMask && selMask.map((r) => r.slice()),
       });
       const updUndoUI = () => {
         document.getElementById("undoBtn").disabled = !undoStack.length;
@@ -2690,7 +2848,10 @@
         cf = Math.min(d.cf, frames.length - 1);
         cl = Math.min(d.cl, layers.length - 1);
         moveBase = null;
+        selMask = d.sel && d.sel.length === H && d.sel[0].length === W ? d.sel : null;
+        updSelUI();
         selCel();
+        if (tool === "transform") xfInit();
         markDirty();
       };
       const checkpoint = () => {
@@ -3177,6 +3338,14 @@
         document.getElementById("shapeOpts").style.display = SHAPES.includes(tool) ? "block" : "none";
         document.getElementById("replOpts").style.display = tool === "replace" ? "flex" : "none";
         document.getElementById("moveOpts").style.display = tool === "move" ? "block" : "none";
+        document.getElementById("fxBrushOpts").style.display = tool === "blur" || tool === "smudge" ? "block" : "none";
+        document.getElementById("textOpts").style.display = tool === "text" ? "flex" : "none";
+        document.getElementById("xfOpts").style.display = tool === "transform" ? "flex" : "none";
+        if (tool === "transform") xfInit();
+        else if (xf) {
+          xf = null;
+          redraw();
+        }
       };
       document.querySelectorAll(".tool-btn").forEach((b) => b.addEventListener("click", updToolOpts));
 
@@ -3541,6 +3710,8 @@
       // Pixel perfect: when three consecutive stroke cells form an "L", the corner cell is undone,
       // so 1-pixel lines never get doubled steps.
       const strokeCell = (x, y) => {
+        if (tool === "blur") return blurDab(x, y);
+        if (tool === "smudge") return smudgeDab(x, y);
         const fine = pixelPerfect && parseInt(bsize) === 1 && brush === "square" && !rotN;
         if (!fine) return drawBrush(x, y, penColor(), alpha);
         const last = strokePath[strokePath.length - 1];
@@ -3674,6 +3845,454 @@
         }
         dl(new Blob([bytes], { type: "image/png" }), "pixel_art.png");
         setStatus("Este navegador no comparte archivos: se descargó el PNG para adjuntarlo al mail");
+      };
+
+      // ---------- color con transparencia como números, para mezclar píxeles
+      const clampByte = (v) => Math.max(0, Math.min(255, Math.round(v)));
+      const toRGBA = (p) => {
+        if (!p || p.e || p.a <= 0) return [0, 0, 0, 0];
+        const c = rgbOf(p.c);
+        return [c.r, c.g, c.b, p.a];
+      };
+      const fromRGBA = ([r, g, b, a]) =>
+        a < 0.03 ? EMPTY : { c: toHex(clampByte(r), clampByte(g), clampByte(b)), a: Math.round(Math.min(1, a) * 100) / 100 };
+      // Weighted average that ignores the color of transparent pixels (premultiplied alpha).
+      const avgRGBA = (items) => {
+        let r = 0,
+          g = 0,
+          b = 0,
+          a = 0,
+          w = 0;
+        items.forEach(([c, k]) => {
+          r += c[0] * c[3] * k;
+          g += c[1] * c[3] * k;
+          b += c[2] * c[3] * k;
+          a += c[3] * k;
+          w += k;
+        });
+        return a > 0 ? [r / a, g / a, b / a, a / w] : [0, 0, 0, 0];
+      };
+      const mixRGBA = (p, q, t) =>
+        avgRGBA([
+          [p, 1 - t],
+          [q, t],
+        ]);
+      // Neighbour lookup: wraps in tile mode, otherwise repeats the edge pixel.
+      const cellNear = (src, x, y) => {
+        if (tileMode) {
+          x = wrapX(x);
+          y = wrapY(y);
+        } else {
+          x = Math.max(0, Math.min(W - 1, x));
+          y = Math.max(0, Math.min(H - 1, y));
+        }
+        return src[y][x];
+      };
+      const BLUR_K = [1, 2, 1, 2, 4, 2, 1, 2, 1];
+      const blurAt = (src, x, y) => {
+        const items = [];
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++)
+            items.push([toRGBA(cellNear(src, x + dx, y + dy)), BLUR_K[(dy + 1) * 3 + dx + 1]]);
+        return avgRGBA(items);
+      };
+
+      // ---------- pinceles de desenfoque y de "dedo" (la fuerza es la Opacidad del color)
+      const dabCells = (x, y) => mirrorCells(brushCells(x, y));
+      const blurDab = (x, y) => {
+        const out = dabCells(x, y).map(([cx, cy]) => {
+          const cur = cellAt(cx, cy);
+          if (!cur) return null;
+          const px = tileMode ? wrapX(cx) : cx,
+            py = tileMode ? wrapY(cy) : cy;
+          return [cx, cy, fromRGBA(mixRGBA(toRGBA(cur), blurAt(grid, px, py), alpha))];
+        });
+        out.forEach((o) => o && putCell(o[0], o[1], o[2]));
+      };
+      // Each brush cell carries the color it picked up and leaves part of it on the next pixel.
+      const smudgeDab = (x, y) => {
+        dabCells(x, y).forEach(([cx, cy], i) => {
+          const p = cellAt(cx, cy);
+          if (!p) return;
+          const cur = toRGBA(p);
+          if (!smBuf.has(i)) return smBuf.set(i, cur);
+          const out = mixRGBA(cur, smBuf.get(i), 0.6 * alpha);
+          putCell(cx, cy, fromRGBA(out));
+          smBuf.set(i, out);
+        });
+      };
+
+      // ---------- filtros sobre la selección o la capa
+      const similar = (p, q) => {
+        if (p.e || q.e) return !!p.e === !!q.e;
+        const a = rgbOf(p.c),
+          b = rgbOf(q.c);
+        return (a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2 < 576 && Math.abs(p.a - q.a) < 0.25;
+      };
+      const FILTERS = {
+        blur: (src, x, y) => fromRGBA(blurAt(src, x, y)),
+        // 5·center − the four neighbours; empty neighbours count as the center so edges don't darken.
+        sharpen: (src, x, y) => {
+          const p = src[y][x];
+          if (p.e) return p;
+          const c = toRGBA(p);
+          const out = [5 * c[0], 5 * c[1], 5 * c[2], c[3]];
+          [
+            [1, 0],
+            [-1, 0],
+            [0, 1],
+            [0, -1],
+          ].forEach(([dx, dy]) => {
+            const q = cellNear(src, x + dx, y + dy);
+            const n = q.e ? c : toRGBA(q);
+            out[0] -= n[0];
+            out[1] -= n[1];
+            out[2] -= n[2];
+          });
+          return fromRGBA(out);
+        },
+        // Keeps a pixel only if one of its four neighbours is different (or it touches the canvas border).
+        edges: (src, x, y) => {
+          const p = src[y][x];
+          if (p.e) return p;
+          const edge = [
+            [1, 0],
+            [-1, 0],
+            [0, 1],
+            [0, -1],
+          ].some(([dx, dy]) => {
+            const nx = x + dx,
+              ny = y + dy;
+            if (!tileMode && (nx < 0 || nx >= W || ny < 0 || ny >= H)) return true;
+            return !similar(p, cellNear(src, nx, ny));
+          });
+          return edge ? p : EMPTY;
+        },
+        // A pixel with no similar neighbour takes the value most common around it.
+        despeckle: (src, x, y) => {
+          const p = src[y][x];
+          const nb = [];
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = x + dx,
+                ny = y + dy;
+              if ((dx || dy) && (tileMode || (nx >= 0 && nx < W && ny >= 0 && ny < H))) nb.push(cellNear(src, nx, ny));
+            }
+          if (!nb.length || nb.some((q) => similar(p, q))) return p;
+          let best = p,
+            bestN = -1;
+          nb.forEach((q) => {
+            const n = nb.filter((r) => similar(q, r)).length;
+            if (n > bestN) {
+              bestN = n;
+              best = q;
+            }
+          });
+          return best;
+        },
+      };
+      const FILTER_NAMES = { blur: "Desenfocar", sharpen: "Enfocar", edges: "Solo bordes", despeckle: "Quitar puntos sueltos" };
+      const applyFilter = (kind) => {
+        if (layerLocked()) return;
+        checkpoint();
+        const src = grid.map((r) => r.slice());
+        let n = 0;
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            if (!inSel(x, y)) continue;
+            const v = FILTERS[kind](src, x, y);
+            if (v !== src[y][x]) n++;
+            grid[y][x] = v;
+          }
+        redraw();
+        updateExport();
+        setStatus(FILTER_NAMES[kind] + ": " + n + " píxeles cambiados");
+      };
+
+      // ---------- texto con tipografías pixel propias (cada fila del glifo es un número en binario)
+      const FONTS = {
+        f35: {
+          w: 3,
+          h: 5,
+          g: {
+            A: [2, 5, 7, 5, 5], B: [6, 5, 6, 5, 6], C: [3, 4, 4, 4, 3], D: [6, 5, 5, 5, 6], E: [7, 4, 6, 4, 7],
+            F: [7, 4, 6, 4, 4], G: [3, 4, 5, 5, 3], H: [5, 5, 7, 5, 5], I: [7, 2, 2, 2, 7], J: [1, 1, 1, 5, 2],
+            K: [5, 5, 6, 5, 5], L: [4, 4, 4, 4, 7], M: [5, 7, 7, 5, 5], N: [6, 5, 5, 5, 5], Ñ: [7, 0, 6, 5, 5],
+            O: [2, 5, 5, 5, 2], P: [6, 5, 6, 4, 4], Q: [2, 5, 5, 7, 3], R: [6, 5, 6, 5, 5], S: [3, 4, 2, 1, 6],
+            T: [7, 2, 2, 2, 2], U: [5, 5, 5, 5, 7], V: [5, 5, 5, 5, 2], W: [5, 5, 7, 7, 5], X: [5, 5, 2, 5, 5],
+            Y: [5, 5, 2, 2, 2], Z: [7, 1, 2, 4, 7],
+            0: [7, 5, 5, 5, 7], 1: [2, 6, 2, 2, 7], 2: [6, 1, 2, 4, 7], 3: [6, 1, 2, 1, 6], 4: [5, 5, 7, 1, 1],
+            5: [7, 4, 6, 1, 6], 6: [3, 4, 7, 5, 7], 7: [7, 1, 2, 2, 2], 8: [7, 5, 7, 5, 7], 9: [7, 5, 7, 1, 6],
+            ".": [0, 0, 0, 0, 2], ",": [0, 0, 0, 2, 4], "!": [2, 2, 2, 0, 2], "?": [6, 1, 2, 0, 2], ":": [0, 2, 0, 2, 0],
+            "-": [0, 0, 7, 0, 0], "+": [0, 2, 7, 2, 0], "/": [1, 1, 2, 4, 4], "(": [1, 2, 2, 2, 1], ")": [4, 2, 2, 2, 4],
+            "'": [2, 2, 0, 0, 0], '"': [5, 5, 0, 0, 0], "=": [0, 7, 0, 7, 0], "*": [5, 2, 5, 0, 0], _: [0, 0, 0, 0, 7],
+            "#": [5, 7, 5, 7, 5], "%": [5, 1, 2, 4, 5], "<": [1, 2, 4, 2, 1], ">": [4, 2, 1, 2, 4], "¡": [2, 0, 2, 2, 2],
+            "¿": [2, 0, 2, 4, 3],
+          },
+        },
+        f57: {
+          w: 5,
+          h: 7,
+          g: {
+            A: [14, 17, 17, 31, 17, 17, 17], B: [30, 17, 17, 30, 17, 17, 30], C: [14, 17, 16, 16, 16, 17, 14],
+            D: [30, 17, 17, 17, 17, 17, 30], E: [31, 16, 16, 30, 16, 16, 31], F: [31, 16, 16, 30, 16, 16, 16],
+            G: [14, 17, 16, 23, 17, 17, 15], H: [17, 17, 17, 31, 17, 17, 17], I: [14, 4, 4, 4, 4, 4, 14],
+            J: [7, 2, 2, 2, 2, 18, 12], K: [17, 18, 20, 24, 20, 18, 17], L: [16, 16, 16, 16, 16, 16, 31],
+            M: [17, 27, 21, 21, 17, 17, 17], N: [17, 25, 21, 19, 17, 17, 17], Ñ: [14, 0, 17, 25, 21, 19, 17],
+            O: [14, 17, 17, 17, 17, 17, 14], P: [30, 17, 17, 30, 16, 16, 16], Q: [14, 17, 17, 17, 21, 18, 13],
+            R: [30, 17, 17, 30, 20, 18, 17], S: [15, 16, 16, 14, 1, 1, 30], T: [31, 4, 4, 4, 4, 4, 4],
+            U: [17, 17, 17, 17, 17, 17, 14], V: [17, 17, 17, 17, 17, 10, 4], W: [17, 17, 17, 21, 21, 21, 10],
+            X: [17, 17, 10, 4, 10, 17, 17], Y: [17, 17, 17, 10, 4, 4, 4], Z: [31, 1, 2, 4, 8, 16, 31],
+            0: [14, 17, 19, 21, 25, 17, 14], 1: [4, 12, 4, 4, 4, 4, 14], 2: [14, 17, 1, 2, 4, 8, 31],
+            3: [31, 2, 4, 2, 1, 17, 14], 4: [2, 6, 10, 18, 31, 2, 2], 5: [31, 16, 30, 1, 1, 17, 14],
+            6: [6, 8, 16, 30, 17, 17, 14], 7: [31, 1, 2, 4, 8, 8, 8], 8: [14, 17, 17, 14, 17, 17, 14],
+            9: [14, 17, 17, 15, 1, 2, 12],
+            ".": [0, 0, 0, 0, 0, 12, 12], ",": [0, 0, 0, 0, 12, 4, 8], "!": [4, 4, 4, 4, 4, 0, 4],
+            "?": [14, 17, 1, 2, 4, 0, 4], ":": [0, 12, 12, 0, 12, 12, 0], "-": [0, 0, 0, 31, 0, 0, 0],
+            "+": [0, 4, 4, 31, 4, 4, 0], "/": [0, 1, 2, 4, 8, 16, 0], "(": [2, 4, 8, 8, 8, 4, 2],
+            ")": [8, 4, 2, 2, 2, 4, 8], "'": [4, 4, 8, 0, 0, 0, 0], '"': [10, 10, 10, 0, 0, 0, 0],
+            "=": [0, 0, 31, 0, 31, 0, 0], "*": [0, 4, 21, 14, 21, 4, 0], _: [0, 0, 0, 0, 0, 0, 31],
+            "#": [10, 10, 31, 10, 31, 10, 10], "%": [24, 25, 2, 4, 8, 19, 3], "<": [2, 4, 8, 16, 8, 4, 2],
+            ">": [8, 4, 2, 1, 2, 4, 8], "¡": [4, 0, 4, 4, 4, 4, 4], "¿": [4, 0, 4, 8, 16, 17, 14],
+          },
+        },
+      };
+      // Only capitals exist: lowercase is raised and accents are dropped, but Ñ is kept.
+      const fontText = (t) =>
+        t
+          .toUpperCase()
+          .replace(/Ñ/g, "\u0001")
+          .normalize("NFD")
+          .replace(/[̀-ͯ]/g, "")
+          .replace(/\u0001/g, "Ñ");
+      const textCells = (x0, y0) => {
+        const font = FONTS[document.getElementById("txtFont").value],
+          k = parseInt(document.getElementById("txtScale").value) || 1,
+          out = [];
+        let cx = x0;
+        for (const ch of fontText(document.getElementById("txtValue").value)) {
+          const rows = font.g[ch];
+          if (rows)
+            rows.forEach((bits, r) => {
+              for (let c = 0; c < font.w; c++)
+                if ((bits >> (font.w - 1 - c)) & 1)
+                  for (let sy = 0; sy < k; sy++) for (let sx = 0; sx < k; sx++) out.push([cx + c * k + sx, y0 + r * k + sy]);
+            });
+          cx += (font.w + 1) * k;
+        }
+        return out;
+      };
+      const drawTextPreview = (x, y) => {
+        ctx.globalAlpha = 0.6 * alpha;
+        ctx.fillStyle = color;
+        textCells(x, y).forEach(([px, py]) => {
+          if (tileMode || (px >= 0 && px < W && py >= 0 && py < H)) ctx.fillRect(px * PSIZE, py * PSIZE, PSIZE, PSIZE);
+        });
+        ctx.globalAlpha = 1;
+      };
+      const placeText = (x, y) => {
+        const cells = textCells(x, y);
+        if (!cells.length) return setStatus("Escribí el texto en el cuadro de la herramienta Texto");
+        checkpoint();
+        cells.forEach(([px, py]) => setPixel(px, py, color, alpha));
+        redraw();
+        updateExport();
+      };
+
+      // ---------- transformar con manejadores: escalar o deformar libre (perspectiva)
+      let xfMode = "scale";
+      const getCoordsF = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const fx = ((e.clientX - rect.left) * (canvas.width / rect.width)) / PSIZE,
+          fy = ((e.clientY - rect.top) * (canvas.height / rect.height)) / PSIZE;
+        return tileMode ? [fx - W, fy - H] : [fx, fy];
+      };
+      const rectQuad = (b) => [
+        [b.x0, b.y0],
+        [b.x1 + 1, b.y0],
+        [b.x1 + 1, b.y1 + 1],
+        [b.x0, b.y1 + 1],
+      ];
+      // Starts from the selection, or from everything drawn on the layer when nothing is selected.
+      const xfInit = () => {
+        let M = selMask;
+        if (!M) {
+          M = newMask(false);
+          let any = false;
+          for (let y = 0; y < H; y++)
+            for (let x = 0; x < W; x++)
+              if (!grid[y][x].e) {
+                M[y][x] = true;
+                any = true;
+              }
+          if (!any) M = null;
+        }
+        const b = M && bboxOf(M);
+        if (!b) {
+          xf = null;
+          redraw();
+          return setStatus("No hay nada para transformar: dibujá o seleccioná algo primero");
+        }
+        const under = selMask && pasteFloat ? pasteFloat.under : null;
+        selMask = M;
+        xf = { base: { grid: grid.map((r) => r.slice()), mask: M.map((r) => r.slice()), under }, b, quad: rectQuad(b), drag: null };
+        updSelUI();
+        redraw();
+      };
+      // Projective map from the unit square to the quad (Heckbert), as [a, b, c, d, e, f, g, h].
+      const quadMatrix = ([p0, p1, p2, p3]) => {
+        const dx1 = p1[0] - p2[0],
+          dx2 = p3[0] - p2[0],
+          dx3 = p0[0] - p1[0] + p2[0] - p3[0],
+          dy1 = p1[1] - p2[1],
+          dy2 = p3[1] - p2[1],
+          dy3 = p0[1] - p1[1] + p2[1] - p3[1];
+        if (!dx3 && !dy3) return [p1[0] - p0[0], p2[0] - p1[0], p0[0], p1[1] - p0[1], p2[1] - p1[1], p0[1], 0, 0];
+        const det = dx1 * dy2 - dx2 * dy1;
+        if (!det) return null;
+        const g = (dx3 * dy2 - dx2 * dy3) / det,
+          h = (dx1 * dy3 - dx3 * dy1) / det;
+        return [p1[0] - p0[0] + g * p1[0], p3[0] - p0[0] + h * p3[0], p0[0], p1[1] - p0[1] + g * p1[1], p3[1] - p0[1] + h * p3[1], p0[1], g, h];
+      };
+      // Each destination pixel looks up which source pixel lands on it (nearest neighbour, so pixels stay sharp).
+      const xfApply = () => {
+        const { base, b, quad } = xf;
+        const m = quadMatrix(quad);
+        if (!m) return;
+        const [a, bb, c, d, e, f, g, h] = m;
+        const A = e - f * h,
+          B = c * h - bb,
+          C = bb * f - c * e,
+          D = f * g - d,
+          E = a - c * g,
+          F = c * d - a * f,
+          G = d * h - e * g,
+          Hh = bb * g - a * h,
+          I = a * e - bb * d;
+        const bw = b.x1 - b.x0 + 1,
+          bh = b.y1 - b.y0 + 1;
+        const out = base.grid.map((r) => r.slice()),
+          nm = newMask(false);
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) if (base.mask[y][x]) out[y][x] = base.under ? base.under[y][x] : EMPTY;
+        const xs = quad.map((p) => p[0]),
+          ys = quad.map((p) => p[1]);
+        const x0 = Math.max(0, Math.floor(Math.min(...xs))),
+          x1 = Math.min(W - 1, Math.ceil(Math.max(...xs))),
+          y0 = Math.max(0, Math.floor(Math.min(...ys))),
+          y1 = Math.min(H - 1, Math.ceil(Math.max(...ys)));
+        for (let y = y0; y <= y1; y++)
+          for (let x = x0; x <= x1; x++) {
+            const X = x + 0.5,
+              Y = y + 0.5,
+              w = G * X + Hh * Y + I;
+            if (Math.abs(w) < 1e-9) continue;
+            const u = (A * X + B * Y + C) / w,
+              v = (D * X + E * Y + F) / w;
+            if (u < 0 || u >= 1 || v < 0 || v >= 1) continue;
+            const sx = b.x0 + Math.floor(u * bw),
+              sy = b.y0 + Math.floor(v * bh);
+            if (!base.mask[sy][sx]) continue;
+            out[y][x] = base.grid[sy][sx];
+            nm[y][x] = true;
+          }
+        for (let y = 0; y < H; y++) grid[y] = out[y];
+        selMask = nm;
+        updSelUI();
+        redraw();
+        updateExport();
+      };
+      const xfDown = (e) => {
+        if (!xf) xfInit();
+        if (!xf) return;
+        const [fx, fy] = getCoordsF(e);
+        const rect = canvas.getBoundingClientRect();
+        const reach = Math.max(1.2, (26 * (canvas.width / rect.width)) / PSIZE);
+        let best = -1,
+          bd = reach;
+        xf.quad.forEach(([qx, qy], i) => {
+          const dist = Math.hypot(qx - fx, qy - fy);
+          if (dist < bd) {
+            bd = dist;
+            best = i;
+          }
+        });
+        if (best < 0) return setStatus("Arrastrá una de las 4 esquinas celestes");
+        checkpoint();
+        xf.drag = best;
+      };
+      const xfMove = (e) => {
+        const [fx, fy] = getCoordsF(e);
+        const nx = Math.max(-W, Math.min(2 * W, Math.round(fx))),
+          ny = Math.max(-H, Math.min(2 * H, Math.round(fy))),
+          i = xf.drag;
+        if (xf.quad[i][0] === nx && xf.quad[i][1] === ny) return;
+        xf.quad[i] = [nx, ny];
+        if (xfMode === "scale") {
+          // Corners are TL, TR, BR, BL: keep the box a rectangle.
+          xf.quad[[3, 2, 1, 0][i]][0] = nx;
+          xf.quad[[1, 0, 3, 2][i]][1] = ny;
+        }
+        xfApply();
+      };
+      const drawXf = () => {
+        if (!xf || tool !== "transform") return;
+        const rect = canvas.getBoundingClientRect();
+        const hs = Math.max(6, 12 * (canvas.width / (rect.width || canvas.width)));
+        ctx.save();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = "#00e5ff";
+        ctx.lineWidth = Math.max(2, hs / 5);
+        ctx.setLineDash([hs / 2, hs / 3]);
+        ctx.beginPath();
+        xf.quad.forEach(([qx, qy], i) => (i ? ctx.lineTo(qx * PSIZE, qy * PSIZE) : ctx.moveTo(qx * PSIZE, qy * PSIZE)));
+        ctx.closePath();
+        ctx.stroke();
+        ctx.setLineDash([]);
+        xf.quad.forEach(([qx, qy]) => {
+          ctx.fillStyle = "#00e5ff";
+          ctx.fillRect(qx * PSIZE - hs / 2, qy * PSIZE - hs / 2, hs, hs);
+          ctx.strokeStyle = "#002b36";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(qx * PSIZE - hs / 2, qy * PSIZE - hs / 2, hs, hs);
+        });
+        ctx.restore();
+      };
+      const setXfMode = (mode) => {
+        xfMode = mode;
+        document.getElementById("xfScale").classList.toggle("active", mode === "scale");
+        document.getElementById("xfFree").classList.toggle("active", mode === "free");
+        if (mode !== "scale" || !xf) return;
+        // Back to scaling: square the box up to the bounds of the current quad.
+        const xs = xf.quad.map((p) => p[0]),
+          ys = xf.quad.map((p) => p[1]);
+        const q = [
+          [Math.min(...xs), Math.min(...ys)],
+          [Math.max(...xs), Math.min(...ys)],
+          [Math.max(...xs), Math.max(...ys)],
+          [Math.min(...xs), Math.max(...ys)],
+        ];
+        if (JSON.stringify(q) === JSON.stringify(xf.quad)) return;
+        checkpoint();
+        xf.quad = q;
+        xfApply();
+      };
+      document.getElementById("xfScale").onclick = () => setXfMode("scale");
+      document.getElementById("xfFree").onclick = () => setXfMode("free");
+      document.getElementById("xfReset").onclick = () => {
+        if (!xf) return;
+        checkpoint();
+        xf.quad = rectQuad(xf.b);
+        xfApply();
+      };
+      document.getElementById("xfDone").onclick = () => selectTool("move");
+
+      // ---------- carpetas de capas
+      document.getElementById("gAdd").onclick = () => {
+        checkpoint();
+        layers[cl].group = newGroupName();
+        renderLayers();
+        setStatus("Carpeta creada con la capa actual. Sumá otras capas con su menú de carpeta");
       };
 
       loadAutosave();
