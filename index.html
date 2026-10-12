@@ -416,6 +416,50 @@
         box-shadow: 2px 2px 0 var(--line);
         padding: 8px 12px;
       }
+      #rgbPanel {
+        position: fixed;
+        z-index: 90;
+        width: 240px;
+        max-width: 92vw;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px;
+        background: var(--panel);
+        border: 3px solid var(--line);
+        box-shadow: 4px 4px 0 var(--line);
+      }
+      #rgbPanel[hidden] {
+        display: none;
+      }
+      .rgb-fila {
+        display: grid;
+        grid-template-columns: 18px 72px 1fr;
+        align-items: center;
+        gap: 8px;
+      }
+      .rgb-num {
+        width: 100%;
+        text-align: right;
+        font: inherit;
+        background: var(--field);
+        border: 2px solid var(--line);
+        color: var(--ink);
+        padding: 6px;
+        border-radius: 0;
+        touch-action: none;
+        cursor: ew-resize;
+      }
+      .rgb-barra {
+        height: 12px;
+        background: var(--field);
+        border: 2px solid var(--line);
+      }
+      .rgb-rel {
+        height: 100%;
+        background: var(--accent);
+        width: 0;
+      }
       #globo {
         position: fixed;
         z-index: 100;
@@ -695,13 +739,11 @@
       </div>
       <div class="section">
         <h2>Filtros</h2>
-        <div class="tool-grid">
-          <button onclick="applyFilter('blur')" title="Suaviza mezclando cada píxel con sus vecinos">💧 Desenfocar</button>
-          <button onclick="applyFilter('sharpen')" title="Marca más los cambios de color">🔪 Enfocar</button>
-          <button onclick="applyFilter('edges')" title="Deja solo los píxeles del borde de cada forma">▢ Solo bordes</button>
-          <button onclick="applyFilter('despeckle')" title="Borra píxeles sueltos, útil después de importar una foto">
-            🧹 Quitar puntos sueltos
-          </button>
+        <div class="ico-grid">
+          <button onclick="applyFilter('blur')" title="Desenfocar: suaviza mezclando cada píxel con sus vecinos">💧</button>
+          <button onclick="applyFilter('sharpen')" title="Enfocar: marca más los cambios de color">🔪</button>
+          <button onclick="applyFilter('edges')" title="Solo bordes: deja solo los píxeles del borde de cada forma">▢</button>
+          <button onclick="applyFilter('despeckle')" title="Quitar puntos sueltos: útil después de importar una foto">🧹</button>
         </div>
         <div class="hint">Se aplican a la selección o, si no hay, a la capa actual. Se pueden deshacer.</div>
       </div>
@@ -739,13 +781,20 @@
       </div>
       <div class="section">
         <h2>Exportar</h2>
-        <button onclick="downloadImage()">📷 PNG</button>
-        <button onclick="sharePNG()">📤 Compartir PNG (mail, WhatsApp…)</button>
-        <textarea id="exportData" readonly></textarea><button onclick="copyToClipboard()">📋 Copiar</button
-        ><button onclick="downloadJSON()">💾 JSON</button><button onclick="downloadBinary()">💾 BIN</button
-        ><button onclick="downloadAnimJSON()">🎞 JSON animación</button
-        ><button onclick="downloadSheet()">🎞 PNG sprite sheet</button
-        ><button onclick="downloadGIF()">🎞 GIF animado</button
+        <div class="ico-grid">
+          <button onclick="downloadImage()" title="PNG">📷</button>
+          <button onclick="sharePNG()" title="Compartir PNG (mail, WhatsApp…)">📤</button>
+          <button onclick="copyToClipboard()" title="Copiar los datos (JSON)">📋</button>
+          <button onclick="downloadJSON()" title="JSON (con capas y frames)">💾</button>
+          <button onclick="downloadBinary()" title="BIN (escala de grises, para pantallas monocromáticas)">🧱</button>
+          <button onclick="downloadAnimJSON()" title="JSON de animación">🎞</button>
+          <button onclick="downloadSheet()" title="PNG sprite sheet">🖼</button>
+          <button onclick="downloadGIF()" title="GIF animado">✨</button>
+        </div>
+        <details class="ajustes">
+          <summary>Ver los datos (JSON)</summary>
+          <textarea id="exportData" readonly></textarea>
+        </details>
         ><label
           >Tamaño de salida (PNG / GIF):
           <select id="expScale" style="width: 190px">
@@ -916,6 +965,14 @@
         ctx.fillStyle = "#808080";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         if (tileMode) ctx.translate(tw, th);
+        // Con «negro = transparente», lo transparente se ve en damero para distinguirlo del fondo
+        if (document.getElementById("blackAlpha").checked) {
+          for (let y = 0; y < H; y++)
+            for (let x = 0; x < W; x++) {
+              ctx.fillStyle = (x + y) % 2 ? "#c9c9c9" : "#8f8f8f";
+              ctx.fillRect(x * PSIZE, y * PSIZE, PSIZE, PSIZE);
+            }
+        }
         if (document.getElementById("aOnion").checked && frames.length > 1) {
           const P = flat((cf - 1 + frames.length) % frames.length);
           for (let y = 0; y < H; y++)
@@ -1486,6 +1543,8 @@
         updateColor();
         color = hex;
         document.getElementById("colorPreview").style.background = hex;
+        const panelRGB = document.getElementById("rgbPanel");
+        if (panelRGB && !panelRGB.hidden && window.refrescarRGB) window.refrescarRGB();
         document.querySelectorAll(".sw").forEach((x) => x.classList.remove("sel"));
         if (el) el.classList.add("sel");
         refreshColText();
@@ -4090,6 +4149,99 @@
       });
       document.getElementById("colFmt").addEventListener("change", refreshColText);
       document.getElementById("colorNative").addEventListener("input", (e) => pickHex(e.target.value));
+      // El toque va a la vista previa, que abre el panel R G B (el selector nativo del sistema no se toca).
+      document.getElementById("colorNative").style.pointerEvents = "none";
+
+      const rgbPanel = document.createElement("div");
+      rgbPanel.id = "rgbPanel";
+      rgbPanel.hidden = true;
+      rgbPanel.setAttribute("role", "dialog");
+      rgbPanel.setAttribute("aria-label", "Color RGB");
+      document.body.append(rgbPanel);
+      const canalesRGB = {};
+      const rgbActual = () => rgbOf(color);
+      const setCanal = (k, v) => {
+        const c = rgbActual();
+        c[k] = Math.max(0, Math.min(255, Math.round(v)));
+        pickHex(toHex(c.r, c.g, c.b));
+        syncRGB();
+      };
+      const syncRGB = () => {
+        const c = rgbActual();
+        for (const k of ["r", "g", "b"]) {
+          const q = canalesRGB[k];
+          if (document.activeElement !== q.num) q.num.value = c[k];
+          q.rel.style.width = (c[k] / 255) * 100 + "%";
+        }
+      };
+      for (const [k, nombre] of [["r", "R"], ["g", "G"], ["b", "B"]]) {
+        const fila = document.createElement("div");
+        fila.className = "rgb-fila";
+        const et = document.createElement("span");
+        et.textContent = nombre;
+        const num = document.createElement("input");
+        num.type = "text";
+        num.inputMode = "numeric";
+        num.className = "rgb-num";
+        num.setAttribute("aria-label", "Canal " + nombre);
+        const barra = document.createElement("div");
+        barra.className = "rgb-barra";
+        const rel = document.createElement("div");
+        rel.className = "rgb-rel";
+        barra.append(rel);
+        fila.append(et, num, barra);
+        rgbPanel.append(fila);
+        canalesRGB[k] = { num, rel };
+        // Tocar sin mover: escribir el número. Arrastrar: el valor cambia con el desplazamiento.
+        let arr = null;
+        num.addEventListener("pointerdown", (e) => {
+          arr = { id: e.pointerId, x: e.clientX, v: rgbActual()[k], moved: false };
+          num.setPointerCapture(e.pointerId);
+        });
+        num.addEventListener("pointermove", (e) => {
+          if (!arr || e.pointerId !== arr.id) return;
+          const dx = e.clientX - arr.x;
+          if (!arr.moved && Math.abs(dx) < 4) return;
+          arr.moved = true;
+          setCanal(k, arr.v + dx);
+        });
+        const soltar = () => {
+          if (!arr) return;
+          const a = arr;
+          arr = null;
+          if (!a.moved) {
+            num.focus();
+            num.select();
+          }
+        };
+        num.addEventListener("pointerup", soltar);
+        num.addEventListener("pointercancel", () => (arr = null));
+        num.addEventListener("change", () => {
+          const n = parseInt(num.value, 10);
+          if (isFinite(n)) setCanal(k, n);
+          else syncRGB();
+        });
+        num.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") num.blur();
+        });
+      }
+      window.refrescarRGB = syncRGB;
+      const abrirRGB = () => {
+        const r = document.getElementById("colorPreview").getBoundingClientRect();
+        rgbPanel.hidden = false;
+        syncRGB();
+        const ancho = rgbPanel.offsetWidth || 240;
+        rgbPanel.style.left = Math.max(8, Math.min(innerWidth - ancho - 8, r.left)) + "px";
+        rgbPanel.style.top = Math.min(innerHeight - rgbPanel.offsetHeight - 8, r.bottom + 8) + "px";
+      };
+      document.getElementById("colorPreview").addEventListener("click", abrirRGB);
+      document.addEventListener("pointerdown", (e) => {
+        if (rgbPanel.hidden || rgbPanel.contains(e.target) || e.target.closest("#colorPreview")) return;
+        rgbPanel.hidden = true;
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") rgbPanel.hidden = true;
+      });
 
       // ---------- PNG: descargar o compartir (mail, mensajes) desde el menú del sistema
       const downloadImage = () => pngCanvas().toBlob((b) => dl(b, "pixel_art.png"));
