@@ -374,6 +374,63 @@
           overflow: visible;
         }
       }
+      /* Botones de herramientas y acciones: solo el ícono, grandes y del mismo tamaño. El nombre sale en el globito. */
+      .ico-grid {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 6px;
+      }
+      .ico-grid button {
+        aspect-ratio: 1;
+        padding: 0;
+        font-size: 22px;
+        display: grid;
+        place-items: center;
+        line-height: 1;
+      }
+      .zoombox {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+      }
+      #zoomVal {
+        width: 4.5em;
+        text-align: right;
+        font: inherit;
+        background: var(--field);
+        border: 2px solid var(--line);
+        color: var(--ink);
+        padding: 4px 6px;
+        border-radius: 0;
+      }
+      .ajustes {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .ajustes summary {
+        font-size: 12px;
+        cursor: pointer;
+        background: var(--btn);
+        border: 2px solid var(--line);
+        box-shadow: 2px 2px 0 var(--line);
+        padding: 8px 12px;
+      }
+      #globo {
+        position: fixed;
+        z-index: 100;
+        max-width: 70vw;
+        background: var(--panel);
+        color: var(--ink);
+        border: 2px solid var(--line);
+        box-shadow: 3px 3px 0 var(--line);
+        padding: 6px 10px;
+        font-size: 13px;
+        pointer-events: none;
+      }
+      #globo[hidden] {
+        display: none;
+      }
     </style>
   </head>
   <body>
@@ -383,7 +440,7 @@
         <button id="undoBtn" class="mini" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>
         <button id="redoBtn" class="mini" title="Rehacer (Ctrl+Shift+Z o Ctrl+Y)">↷ Rehacer</button>
         <button id="zoomOut" class="mini" title="Alejar">−</button>
-        <span id="zoomVal">100%</span>
+        <span class="zoombox"><input id="zoomVal" type="text" inputmode="numeric" value="100" aria-label="Zoom en porcentaje" title="Tocá y escribí el zoom en %" />%</span>
         <button id="zoomIn" class="mini" title="Acercar (en el teléfono: pellizcá con dos dedos)">+</button>
         <button id="zoomFit" class="mini" title="Ajustar a la pantalla">⤢ Ajustar</button>
         <button id="animToggle" class="mini" title="Muestra u oculta los controles de frames y animación">🎞 Animación</button>
@@ -450,23 +507,85 @@
         </div>
       </div>
       <div class="section">
-        <h2>Herramientas</h2>
+        <h2>Color</h2>
+        <div style="position: relative">
+          <div class="color-preview" id="colorPreview"></div>
+          <input
+            type="color"
+            id="colorNative"
+            title="Tocá para abrir el selector de color"
+            style="position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0"
+          />
+        </div>
+        <div style="display: flex; gap: 6px">
+          <select id="colFmt" style="width: 90px; flex: none" title="Formato en que se muestra el color">
+            <option value="hex">Hex</option>
+            <option value="rgba">RGBA</option>
+            <option value="hsla">HSLA</option>
+          </select>
+          <input
+            type="text"
+            id="colText"
+            spellcheck="false"
+            autocapitalize="off"
+            style="flex: 1; min-width: 0"
+            title="Escribí un color: #ff8800, rgb(255,136,0), hsla(32,100%,50%,0.5)…"
+          />
+        </div>
+        <div class="hint">Tocá la barra para abrir el selector de color, o escribí el código y Enter.</div>
+        <details class="ajustes">
+          <summary>Tono, saturación, luz y opacidad</summary>
+        <label
+          >Hue: <span id="hueVal">0°</span
+          ><input type="range" id="hueSlider" min="0" max="360" value="0" style="width: 70%; margin: 0" /></label
+        ><label
+          >Saturación: <span id="satVal">100%</span
+          ><input type="range" id="satSlider" min="0" max="100" value="100" style="width: 70%; margin: 0" /></label
+        ><label
+          >Luminancia: <span id="lumVal">50%</span
+          ><input type="range" id="lumSlider" min="0" max="100" value="50" style="width: 70%; margin: 0" /></label
+        ><label
+          >Opacidad: <span id="alphaVal">100%</span
+          ><input type="range" id="alphaSlider" min="0" max="100" value="100" style="width: 70%; margin: 0" /></label
+        ></details
+        ><input type="checkbox" id="blackAlpha" style="display: none" /><button
+          id="blackAlphaBtn"
+          title="Los píxeles negros puros se tratan como transparentes: en la vista, en el PNG y en los efectos"
+        >
+          ⬛ Negro = transparente
+        </button>
+      </div>
+      <div class="section">
+        <h2>Paletas</h2>
+        <select id="paletteSel"></select>
+        <div id="swatches"></div>
+        <div id="palInfo" style="font-size: 11px; color: var(--ink-dim)"></div>
         <div class="tool-grid">
-          <button class="tool-btn active" data-tool="pen">✏️ Pincel</button>
-          <button class="tool-btn" data-tool="eraser">🧽 Goma</button>
-          <button class="tool-btn" data-tool="bucket">🪣 Balde</button>
-          <button class="tool-btn" data-tool="eyedropper">🎯 Pipeta</button>
-          <button class="tool-btn" data-tool="replace">🔁 Reemplazar color</button>
-          <button class="tool-btn" data-tool="line">📏 Línea</button>
-          <button class="tool-btn" data-tool="rect">▭ Rectángulo</button>
-          <button class="tool-btn" data-tool="ellipse">◯ Elipse</button>
-          <button class="tool-btn" data-tool="move">✋ Mover</button>
-          <button class="tool-btn" data-tool="select">⬚ Selección</button>
-          <button class="tool-btn" data-tool="wand">🪄 Varita (mismo color)</button>
-          <button class="tool-btn" data-tool="transform">⛶ Transformar</button>
-          <button class="tool-btn" data-tool="text">🔤 Texto</button>
-          <button class="tool-btn" data-tool="blur">💧 Desenfocar</button>
-          <button class="tool-btn" data-tool="smudge">👆 Dedo</button>
+          <button id="palAdd">➕ Agregar color a Mi paleta</button>
+          <button id="palClear">🗑 Vaciar Mi paleta</button>
+        </div>
+        <button id="quantBtn" title="Al importar una imagen, cada píxel toma el color más parecido de la paleta elegida">
+          🎨 Ajustar a la paleta al importar imagen
+        </button>
+      </div>
+      <div class="section">
+        <h2>Herramientas</h2>
+        <div class="ico-grid">
+          <button class="tool-btn active" data-tool="pen" title="Pincel" aria-label="Pincel">✏️</button>
+          <button class="tool-btn" data-tool="eraser" title="Goma" aria-label="Goma">🧽</button>
+          <button class="tool-btn" data-tool="bucket" title="Balde" aria-label="Balde">🪣</button>
+          <button class="tool-btn" data-tool="eyedropper" title="Pipeta" aria-label="Pipeta">🎯</button>
+          <button class="tool-btn" data-tool="replace" title="Reemplazar color" aria-label="Reemplazar color">🔁</button>
+          <button class="tool-btn" data-tool="line" title="Línea" aria-label="Línea">📏</button>
+          <button class="tool-btn" data-tool="rect" title="Rectángulo" aria-label="Rectángulo">▭</button>
+          <button class="tool-btn" data-tool="ellipse" title="Elipse" aria-label="Elipse">◯</button>
+          <button class="tool-btn" data-tool="move" title="Mover" aria-label="Mover">✋</button>
+          <button class="tool-btn" data-tool="select" title="Selección" aria-label="Selección">⬚</button>
+          <button class="tool-btn" data-tool="wand" title="Varita (mismo color)" aria-label="Varita (mismo color)">🪄</button>
+          <button class="tool-btn" data-tool="transform" title="Transformar" aria-label="Transformar">⛶</button>
+          <button class="tool-btn" data-tool="text" title="Texto" aria-label="Texto">🔤</button>
+          <button class="tool-btn" data-tool="blur" title="Desenfocar" aria-label="Desenfocar">💧</button>
+          <button class="tool-btn" data-tool="smudge" title="Dedo" aria-label="Dedo">👆</button>
         </div>
         <div id="shapeOpts" style="display: none">
           <button id="shapeFill" title="Rectángulo y elipse rellenos">◼ Relleno</button>
@@ -532,15 +651,20 @@
       </div>
       <div class="section">
         <h2>Selección y transformar</h2>
-        <div class="tool-grid">
-          <button id="copyBtn" title="Ctrl+C">📋 Copiar</button>
-          <button id="cutBtn" title="Ctrl+X">✂ Cortar</button>
-          <button id="pasteBtn" title="Ctrl+V. Pega en el frame y la capa actuales">📥 Pegar</button>
-          <button id="flipH">⇋ Voltear horizontal</button>
-          <button id="flipV">⇵ Voltear vertical</button>
-          <button id="rot90">⟳ Rotar 90°</button>
+        <div class="ico-grid">
+          <button id="copyBtn" title="Ctrl+C" aria-label="Copiar">📋</button>
+          <button id="cutBtn" title="Ctrl+X" aria-label="Cortar">✂</button>
+          <button id="pasteBtn" title="Ctrl+V. Pega en el frame y la capa actuales" aria-label="Pegar">📥</button>
+          <button id="flipH" title="Voltear horizontal" aria-label="Voltear horizontal">⇋</button>
+          <button id="flipV" title="Voltear vertical" aria-label="Voltear vertical">⇵</button>
+          <button id="rot90" title="Rotar 90°" aria-label="Rotar 90°">⟳</button>
         </div>
         <div class="hint">Actúan sobre la selección o, si no hay, sobre la capa actual.</div>
+      </div>
+      <div class="section">
+        <h2>Tamaño</h2>
+        <label>Radio: <span id="brushVal">1</span></label
+        ><input type="range" id="brushSlider" min="1" max="5" value="1" />
       </div>
       <div class="section">
         <h2>Forma</h2>
@@ -570,70 +694,6 @@
         </button>
       </div>
       <div class="section">
-        <h2>Tamaño</h2>
-        <label>Radio: <span id="brushVal">1</span></label
-        ><input type="range" id="brushSlider" min="1" max="5" value="1" />
-      </div>
-      <div class="section">
-        <h2>Color</h2>
-        <div style="position: relative">
-          <div class="color-preview" id="colorPreview"></div>
-          <input
-            type="color"
-            id="colorNative"
-            title="Tocá para abrir el selector de color"
-            style="position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0"
-          />
-        </div>
-        <div style="display: flex; gap: 6px">
-          <select id="colFmt" style="width: 90px; flex: none" title="Formato en que se muestra el color">
-            <option value="hex">Hex</option>
-            <option value="rgba">RGBA</option>
-            <option value="hsla">HSLA</option>
-          </select>
-          <input
-            type="text"
-            id="colText"
-            spellcheck="false"
-            autocapitalize="off"
-            style="flex: 1; min-width: 0"
-            title="Escribí un color: #ff8800, rgb(255,136,0), hsla(32,100%,50%,0.5)…"
-          />
-        </div>
-        <div class="hint">Tocá la barra para abrir el selector de color, o escribí el código y Enter.</div>
-        <label
-          >Hue: <span id="hueVal">0°</span
-          ><input type="range" id="hueSlider" min="0" max="360" value="0" style="width: 70%; margin: 0" /></label
-        ><label
-          >Saturación: <span id="satVal">100%</span
-          ><input type="range" id="satSlider" min="0" max="100" value="100" style="width: 70%; margin: 0" /></label
-        ><label
-          >Luminancia: <span id="lumVal">50%</span
-          ><input type="range" id="lumSlider" min="0" max="100" value="50" style="width: 70%; margin: 0" /></label
-        ><label
-          >Opacidad: <span id="alphaVal">100%</span
-          ><input type="range" id="alphaSlider" min="0" max="100" value="100" style="width: 70%; margin: 0" /></label
-        ><input type="checkbox" id="blackAlpha" style="display: none" /><button
-          id="blackAlphaBtn"
-          title="Los píxeles negros puros se tratan como transparentes: en la vista, en el PNG y en los efectos"
-        >
-          ⬛ Negro = transparente
-        </button>
-      </div>
-      <div class="section">
-        <h2>Paletas</h2>
-        <select id="paletteSel"></select>
-        <div id="swatches"></div>
-        <div id="palInfo" style="font-size: 11px; color: var(--ink-dim)"></div>
-        <div class="tool-grid">
-          <button id="palAdd">➕ Agregar color a Mi paleta</button>
-          <button id="palClear">🗑 Vaciar Mi paleta</button>
-        </div>
-        <button id="quantBtn" title="Al importar una imagen, cada píxel toma el color más parecido de la paleta elegida">
-          🎨 Ajustar a la paleta al importar imagen
-        </button>
-      </div>
-      <div class="section">
         <h2>Filtros</h2>
         <div class="tool-grid">
           <button onclick="applyFilter('blur')" title="Suaviza mezclando cada píxel con sus vecinos">💧 Desenfocar</button>
@@ -647,18 +707,19 @@
       </div>
       <div class="section">
         <h2>Efectos</h2>
-        <label>Radio del glow: <span id="fxVal">2</span></label
-        ><input type="range" id="fxSlider" min="1" max="5" value="2" /><label
-          >Color del reborde:
-          <input
-            type="color"
-            id="obColor"
-            value="#ffffff"
-            style="width: 60px; height: 28px; padding: 0; border: none; background: none" /></label
-        ><label>Grosor del reborde: <span id="obVal">0</span></label
-        ><input type="range" id="obSlider" min="0" max="6" value="0" /><button onclick="applyGlow()">
-          ✨ Glow (color y opacidad actuales)</button
-        ><button onclick="undo()">↶ Deshacer</button>
+        <label>Glow (radio): <span id="fxVal">0</span></label>
+        <input type="range" id="fxSlider" min="0" max="5" value="0" />
+        <label>Reborde (grosor): <span id="obVal">0</span></label>
+        <input type="range" id="obSlider" min="0" max="6" value="0" />
+        <label>Color del reborde:
+          <input type="color" id="obColor" value="#ffffff" style="width: 60px; height: 28px; padding: 0; border: none; background: none" />
+        </label>
+        <button id="fxBake" onclick="applyFx()">✓ Aplicar glow y reborde al dibujo</button>
+        <button onclick="undo()">↶ Deshacer</button>
+        <div class="hint">
+          Se ven en vivo sobre el dibujo. El glow usa el color y la opacidad de arriba; el reborde, el color de
+          “Color del reborde”. Al aplicar quedan como píxeles de la capa actual y se puede seguir pintando.
+        </div>
       </div>
       <div class="section">
         <h2>Íconos y dibujos prediseñados</h2>
@@ -1469,11 +1530,16 @@
       const contentMap = () => grid.map((row) => row.map(isContent));
       document.getElementById("fxSlider").addEventListener("input", (e) => {
         document.getElementById("fxVal").textContent = e.target.value;
+        updateExport();
+        redraw();
       });
+      // Reborde (T píxeles) y glow (radio R, con el color y la opacidad actuales): se ven en vivo sobre
+      // el dibujo y no se guardan hasta «Aplicar» (applyFx). Se usan también al exportar.
       const fin = (f = cf) => {
         const base = flat(f);
         const T = parseInt(document.getElementById("obSlider").value);
-        if (!T) return base;
+        const R = parseInt(document.getElementById("fxSlider").value);
+        if (!T && !R) return base;
         const oc = document.getElementById("obColor").value;
         const m = base.map((r) => r.map(isContent));
         const out = base.map((r) => r.slice());
@@ -1481,18 +1547,49 @@
           for (let x = 0; x < W; x++) {
             if (m[y][x]) continue;
             let hit = false;
-            for (let dy = -T; dy <= T && !hit; dy++) {
-              for (let dx = -T; dx <= T; dx++) {
+            if (T) {
+              for (let dy = -T; dy <= T && !hit; dy++) {
+                for (let dx = -T; dx <= T; dx++) {
+                  const nx = x + dx,
+                    ny = y + dy;
+                  if (nx < 0 || nx >= W || ny < 0 || ny >= H || !m[ny][nx]) continue;
+                  if (dx * dx + dy * dy <= T * T + 0.5) {
+                    hit = true;
+                    break;
+                  }
+                }
+              }
+              if (hit) {
+                out[y][x] = { c: oc, a: 1 };
+                continue;
+              }
+            }
+            if (!R) continue;
+            let best = Infinity;
+            for (let dy = -R; dy <= R; dy++) {
+              for (let dx = -R; dx <= R; dx++) {
                 const nx = x + dx,
                   ny = y + dy;
                 if (nx < 0 || nx >= W || ny < 0 || ny >= H || !m[ny][nx]) continue;
-                if (dx * dx + dy * dy <= T * T + 0.5) {
-                  hit = true;
-                  break;
-                }
+                const d = Math.sqrt(dx * dx + dy * dy);
+                if (d < best) best = d;
               }
             }
-            if (hit) out[y][x] = { c: oc, a: 1 };
+            if (best > R) continue;
+            const ga = (alpha * (R + 1 - best)) / R;
+            const b = out[y][x];
+            if (b.e || b.a <= 0) {
+              out[y][x] = { c: color, a: Math.round(ga * 100) / 100 };
+            } else {
+              const g = rgbOf(color),
+                bb = rgbOf(b.c),
+                ao = ga + b.a * (1 - ga);
+              const ch = (k) =>
+                Math.round((g[k] * ga + bb[k] * b.a * (1 - ga)) / ao)
+                  .toString(16)
+                  .padStart(2, "0");
+              out[y][x] = { c: "#" + ch("r") + ch("g") + ch("b"), a: Math.round(ao * 100) / 100 };
+            }
           }
         }
         return out;
@@ -1507,42 +1604,26 @@
         redraw();
       });
       const fexp = (f = cf) => fin(f).map((r) => r.map((p) => (p.e ? { c: "#000000", a: 0 } : p)));
-      const applyGlow = () => {
+      // «Aplicar»: lo que se ve (reborde y glow) pasa a píxeles de la capa actual, donde estaba vacío.
+      // Después se puede seguir pintando encima. Se puede deshacer.
+      const applyFx = () => {
         if (layerLocked()) return;
-        const R = parseInt(document.getElementById("fxSlider").value);
-        snapGrid();
-        const m = contentMap();
+        const base = flat(cf);
+        const G = fin(cf);
+        const cambios = [];
         for (let y = 0; y < H; y++) {
           for (let x = 0; x < W; x++) {
-            if (m[y][x] || !inSel(x, y)) continue;
-            let best = Infinity;
-            for (let dy = -R; dy <= R; dy++) {
-              for (let dx = -R; dx <= R; dx++) {
-                const nx = x + dx,
-                  ny = y + dy;
-                if (nx < 0 || nx >= W || ny < 0 || ny >= H || !m[ny][nx]) continue;
-                const d = Math.sqrt(dx * dx + dy * dy);
-                if (d < best) best = d;
-              }
-            }
-            if (best <= R) {
-              const ga = (alpha * (R + 1 - best)) / R;
-              const b = grid[y][x];
-              if (b.e || b.a <= 0) {
-                grid[y][x] = { c: color, a: Math.round(ga * 100) / 100 };
-              } else {
-                const g = rgbOf(color),
-                  bb = rgbOf(b.c),
-                  ao = ga + b.a * (1 - ga);
-                const ch = (k) =>
-                  Math.round((g[k] * ga + bb[k] * b.a * (1 - ga)) / ao)
-                    .toString(16)
-                    .padStart(2, "0");
-                grid[y][x] = { c: "#" + ch("r") + ch("g") + ch("b"), a: Math.round(ao * 100) / 100 };
-              }
-            }
+            if (G[y][x] !== base[y][x] && (grid[y][x].e || grid[y][x].a <= 0)) cambios.push([x, y, G[y][x]]);
           }
         }
+        ["obSlider", "fxSlider"].forEach((id) => (document.getElementById(id).value = 0));
+        document.getElementById("obVal").textContent = "0";
+        document.getElementById("fxVal").textContent = "0";
+        if (cambios.length) {
+          snapGrid();
+          for (const [x, y, p] of cambios) grid[y][x] = p;
+        }
+        updateExport();
         redraw();
       };
       document.querySelectorAll(".tool-btn").forEach((b) =>
@@ -3138,6 +3219,55 @@
         });
       };
 
+      // En el celu no hay mouse: si mantenés apretado un botón, sale un globito con lo que hace.
+      // Ese toque largo no activa el botón.
+      (() => {
+        const globo = document.createElement("div");
+        globo.id = "globo";
+        globo.setAttribute("role", "tooltip");
+        globo.hidden = true;
+        document.body.append(globo);
+        let espera = null;
+        let mostrando = false;
+        let suprimir = 0;
+        const ocultar = () => {
+          clearTimeout(espera);
+          if (mostrando) suprimir = Date.now() + 500;
+          mostrando = false;
+          globo.hidden = true;
+        };
+        document.addEventListener("pointerdown", (e) => {
+          if (e.pointerType !== "touch") return;
+          const b = e.target.closest("button[title]");
+          if (!b) return;
+          clearTimeout(espera);
+          mostrando = false;
+          espera = setTimeout(() => {
+            mostrando = true;
+            globo.textContent = b.title;
+            globo.hidden = false;
+            const r = b.getBoundingClientRect();
+            const g = globo.getBoundingClientRect();
+            const x = Math.max(8, Math.min(innerWidth - g.width - 8, r.left + r.width / 2 - g.width / 2));
+            const y = r.top - g.height - 8 >= 8 ? r.top - g.height - 8 : r.bottom + 8;
+            globo.style.left = x + "px";
+            globo.style.top = y + "px";
+          }, 450);
+        });
+        document.addEventListener("pointerup", ocultar);
+        document.addEventListener("pointercancel", ocultar);
+        document.addEventListener(
+          "click",
+          (e) => {
+            if (Date.now() >= suprimir) return;
+            suprimir = 0;
+            e.preventDefault();
+            e.stopPropagation();
+          },
+          true,
+        );
+      })();
+
       // ---------- zoom y desplazamiento
       const viewport = document.getElementById("viewport");
       // En el teléfono el lienzo tiene que entrar en la franja de arriba que queda fija (ver el CSS de @media).
@@ -3147,11 +3277,13 @@
           : Math.max(200, window.innerHeight * 0.68);
         return Math.min(1, (viewport.clientWidth || canvas.width) / canvas.width, alto / canvas.height);
       };
+      let zoomEscribiendo = false;
       const applyZoom = () => {
         const f = fitScale() * zoom;
         canvas.style.width = Math.round(canvas.width * f) + "px";
         canvas.style.height = Math.round(canvas.height * f) + "px";
-        document.getElementById("zoomVal").textContent = Math.round(zoom * 100) + "%";
+        // no pisa lo que se está escribiendo (zoomEscribiendo lo marca el campo)
+        if (!zoomEscribiendo) document.getElementById("zoomVal").value = Math.round(zoom * 100);
       };
       // Keeps the canvas point under (cx, cy) fixed while zooming.
       const zoomAt = (z, cx, cy) => {
@@ -3169,8 +3301,27 @@
         const r = viewport.getBoundingClientRect();
         zoomAt(z, r.left + r.width / 2, r.top + r.height / 2);
       };
-      document.getElementById("zoomIn").onclick = () => zoomCenter(zoom * 1.25);
-      document.getElementById("zoomOut").onclick = () => zoomCenter(zoom / 1.25);
+      // Pasos prolijos (100, 150, 200…). El porcentaje también se puede escribir a mano.
+      const ZOOM_STEPS = [100, 150, 200, 300, 400, 600, 800, 1200];
+      const zoomPaso = (dir) => {
+        const p = Math.round(zoom * 100);
+        const nuevo = dir > 0 ? ZOOM_STEPS.find((s) => s > p + 0.5) : ZOOM_STEPS.filter((s) => s < p - 0.5).pop();
+        zoomCenter(nuevo ? nuevo / 100 : zoom);
+      };
+      document.getElementById("zoomIn").onclick = () => zoomPaso(1);
+      document.getElementById("zoomOut").onclick = () => zoomPaso(-1);
+      const zoomInput = document.getElementById("zoomVal");
+      zoomInput.addEventListener("input", () => (zoomEscribiendo = true));
+      zoomInput.addEventListener("focus", () => zoomInput.select());
+      zoomInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") zoomInput.blur();
+      });
+      zoomInput.addEventListener("change", () => {
+        zoomEscribiendo = false;
+        const n = parseFloat(zoomInput.value.replace(",", "."));
+        if (isFinite(n) && n > 0) zoomCenter(Math.max(1, Math.min(12, n / 100)));
+        else applyZoom();
+      });
       document.getElementById("zoomFit").onclick = () => {
         zoom = 1;
         applyZoom();
