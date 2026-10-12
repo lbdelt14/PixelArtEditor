@@ -9,6 +9,7 @@ Funciona con el dedo y se puede instalar como app: en iPhone, abrí el link en S
 ## Funciones
 
 - **Deshacer / rehacer** todo (Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y o los botones de arriba).
+- **Tema**: botón ☀/☾ de la barra para pasar del modo crema (claro) al gris oscuro. Por defecto sigue el modo del sistema.
 - **Guardado automático** en el dispositivo; **Proyecto**: nuevo, guardar y abrir (`.pixel.json` con capas y frames).
 - **Zoom y desplazamiento**: botones, Ctrl + rueda o pellizco en el teléfono.
 - Lienzo con presets por nombre de pantalla (OLED SSD1306, Nokia 5110 y 1100, TFT ST7735 y ST7789, matrices LED, Game Boy, NES) y tamaño custom.
