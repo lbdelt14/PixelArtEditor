@@ -2106,6 +2106,15 @@
             pNum("gamma", "Gamma", 0.2, 3, 1, 0.05),
           ],
         },
+        polygon: {
+          name: "Polygon", inputs: [], output: "gray",
+          params: [
+            pSel("shape", "Shape", [["circle", "Circle"], ["square", "Square"], ["triangle", "Triangle"]], "circle"),
+            pNum("size", "Size", 0.05, 1, 0.5, 0.01),
+            pNum("centerX", "Center X", 0, 1, 0.5, 0.01),
+            pNum("centerY", "Center Y", 0, 1, 0.5, 0.01),
+          ],
+        },
         invert: { name: "Invert", inputs: [["In", "gray"]], output: "gray", params: [] },
         transform: {
           name: "Transform", inputs: [["In", "gray"]], output: "gray",
@@ -2238,6 +2247,27 @@
           for (let x = 0; x < W; x++) t[y * W + x] = (Math.floor((x / W) * count) + Math.floor((y / H) * count)) & 1;
         return t;
       };
+      // Forma blanca (1) sobre negro (0). El tamaño es la fracción del lienzo que ocupa el ancho de la forma.
+      // La distancia da la vuelta por los bordes: si la forma se corta en un lado, aparece del otro.
+      const gPolygon = (shape, size, cx, cy) => {
+        const t = new Float32Array(W * H);
+        const r = size / 2;
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            let dx = x / W - cx,
+              dy = y / H - cy;
+            dx -= Math.round(dx);
+            dy -= Math.round(dy);
+            const u = dx / r,
+              v = dy / r;
+            let inside = false;
+            if (shape === "square") inside = Math.max(Math.abs(u), Math.abs(v)) <= 1;
+            else if (shape === "triangle") inside = v >= -1 && v <= 1 && Math.abs(u) <= (v + 1) / 2;
+            else inside = u * u + v * v <= 1;
+            t[y * W + x] = inside ? 1 : 0;
+          }
+        return t;
+      };
       const blendPixel = (mode, a, b) => {
         switch (mode) {
           case "multiply": return a * b;
@@ -2338,6 +2368,7 @@
           case "checker": return gChecker(Math.round(P("count")));
           case "blend": return ins[0] && ins[1] ? gBlend(ins[0], ins[1], P("mode"), P("opacity"), ins[2]) : null;
           case "levels": return ins[0] ? gLevels(ins[0], P("black"), P("white"), P("gamma")) : null;
+          case "polygon": return gPolygon(P("shape"), P("size"), P("centerX"), P("centerY"));
           case "invert": return ins[0] ? Float32Array.from(ins[0], (v) => 1 - v) : null;
           case "transform": return ins[0] ? gTransform(ins[0], Math.round(P("offsetX")), Math.round(P("offsetY")), P("rotate"), P("flipX"), P("flipY")) : null;
           case "tile": return ins[0] ? gTile(ins[0], Math.round(P("countX")), Math.round(P("countY"))) : null;
