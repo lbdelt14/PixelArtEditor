@@ -2239,7 +2239,56 @@
         } catch (e) {}
       };
       let graph = graphLoad();
-      let graphNextId = 100;
+      // Los ids nuevos arrancan por encima de los guardados (antes el contador volvía a 100 en cada carga
+      // y un nodo nuevo podía repetir el id de otro: los cables se pegaban al nodo equivocado).
+      let graphNextId = 1 + Math.max(99, ...graph.nodes.map((n) => parseInt(String(n.id).replace(/\D/g, ""), 10) || 0));
+      const graphNewId = () => {
+        let id;
+        do id = "n" + graphNextId++;
+        while (graph.nodes.some((n) => n.id === id));
+        return id;
+      };
+      // Repara grafos guardados: ids repetidos, cables a nodos o entradas que no existen, tipos que no
+      // coinciden y dos cables en la misma entrada (queda el último).
+      const graphSanitize = () => {
+        const find = (id) => graph.nodes.find((n) => n.id === id);
+        graph.nodes = graph.nodes.filter((n) => NODE_TYPES[n.type]);
+        const vistos = new Map();
+        for (const n of graph.nodes) {
+          if (!vistos.has(n.id)) {
+            vistos.set(n.id, n);
+            continue;
+          }
+          const viejo = n.id,
+            primero = vistos.get(viejo);
+          n.id = graphNewId();
+          vistos.set(n.id, n);
+          // los cables que sólo le pueden corresponder a este nodo (por la entrada y el tipo) pasan a él
+          const sirve = (nodo, l) => {
+            const ins = NODE_TYPES[nodo.type].inputs;
+            const src = find(l.from);
+            return l.input >= 0 && l.input < ins.length && (!src || NODE_TYPES[src.type].output === ins[l.input][1]);
+          };
+          for (const l of graph.links) if (l.to === viejo && sirve(n, l) && !sirve(primero, l)) l.to = n.id;
+        }
+        const usados = new Set();
+        const buenos = [];
+        for (const l of graph.links.slice().reverse()) {
+          const a = find(l.from),
+            b = find(l.to);
+          if (!a || !b || a === b) continue;
+          const ins = NODE_TYPES[b.type].inputs;
+          if (!(l.input >= 0 && l.input < ins.length)) continue;
+          if (NODE_TYPES[a.type].output !== ins[l.input][1]) continue;
+          const k = l.to + ":" + l.input;
+          if (usados.has(k)) continue;
+          usados.add(k);
+          buenos.push(l);
+        }
+        graph.links = buenos.reverse();
+      };
+      graphSanitize();
+      graphSave();
 
       // 16 bits: cada valor de gris se redondea a 65 536 niveles lineales
       const q16 = (v) => Math.round(Math.max(0, Math.min(1, v)) * 65535) / 65535;
@@ -2853,7 +2902,7 @@
       const graphAddNode = (type) => {
         const p = {};
         for (const def of NODE_TYPES[type].params) p[def.k] = def.def;
-        const id = "n" + graphNextId++;
+        const id = graphNewId();
         const x = Math.round(-graphView.x + 140 + Math.random() * 60);
         const y = Math.round(-graphView.y + 120 + Math.random() * 60);
         graph.nodes.push({ id, type, x, y, p });
@@ -2879,7 +2928,7 @@
       const graphAddNodeAt = (type, x, y) => {
         const p = {};
         for (const def of NODE_TYPES[type].params) p[def.k] = def.def;
-        const id = "n" + graphNextId++;
+        const id = graphNewId();
         graph.nodes.push({ id, type, x: Math.round(x), y: Math.round(y), p });
         graphSelected = id;
         return id;
@@ -3199,7 +3248,7 @@
         }
         graphClearReset();
         if (!window.confirm("Delete all nodes and connections? This can't be undone.")) return;
-        const out = graph.nodes.find((n) => n.type === "output") || { id: "n" + graphNextId++, type: "output", x: 470, y: 30, p: {} };
+        const out = graph.nodes.find((n) => n.type === "output") || { id: graphNewId(), type: "output", x: 470, y: 30, p: {} };
         graph.nodes = [out];
         graph.links = [];
         graphSelected = null;
