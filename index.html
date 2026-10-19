@@ -2746,6 +2746,17 @@
         }
       };
       goView.addEventListener("pointerup", graphRelease);
+      // Doble clic nativo: el nodo se busca por su posición, así no depende de que el elemento siga igual
+      goView.addEventListener("dblclick", (e) => {
+        const p = graphWorldPos(e);
+        const n = graph.nodes.find((n) => p.x >= n.x && p.x <= n.x + NODE_W && p.y >= n.y && p.y <= n.y + graphHeight(n));
+        if (!n) return;
+        graphPreviewId = n.id;
+        graphSelected = n.id;
+        graphRender();
+        graphParamsPanel();
+        graphPreview();
+      });
       goView.addEventListener("pointercancel", () => (graphDrag = null));
 
       document.getElementById("graphBtn").addEventListener("click", () => graphOpen(true));
