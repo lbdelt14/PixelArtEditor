@@ -2126,14 +2126,43 @@
       const pNum = (k, label, min, max, def, step) => ({ k, label, t: "num", min, max, def, step });
       const pSel = (k, label, opts, def) => ({ k, label, t: "select", opts, def });
       const pCol = (k, label, def) => ({ k, label, t: "color", def });
+      // Parámetro que sólo se muestra para ciertos tipos (el parámetro «kind» del nodo)
+      const only = (types, d) => ({ ...d, when: types });
+      const NOISE_KINDS = [
+        ["perlin", "Perlin"],
+        ["value", "Value"],
+        ["gaussian", "Gaussian (white)"],
+        ["turbulence", "Turbulence"],
+        ["ridged", "Ridged"],
+        ["marble", "Marble"],
+        ["wood", "Wood"],
+        ["voronoi", "Voronoi"],
+        ["moisture", "Moisture"],
+        ["caustic", "Caustic"],
+      ];
+      const FRACTAL = ["perlin", "value", "turbulence", "ridged", "marble", "wood", "moisture"];
       const NODE_TYPES = {
         noise: {
           name: "Noise", inputs: [], output: "gray",
           params: [
-            pSel("kind", "Type", [["perlin", "Perlin"], ["value", "Value"]], "perlin"),
-            pNum("scale", "Scale", 2, 16, 4, 1),
-            pNum("octaves", "Octaves", 1, 6, 4, 1),
-            pNum("persistence", "Persistence", 0.1, 1, 0.5, 0.05),
+            pSel("kind", "Type", NOISE_KINDS, "perlin"),
+            only(["perlin", "value", "turbulence", "ridged", "marble", "wood", "voronoi", "moisture", "caustic"], pNum("scale", "Scale", 1, 16, 4, 1)),
+            only(FRACTAL, pNum("octaves", "Octaves", 1, 8, 4, 1)),
+            only(FRACTAL, pNum("persistence", "Persistence", 0.1, 1, 0.5, 0.05)),
+            only(FRACTAL, pNum("lacunarity", "Lacunarity", 2, 4, 2, 1)),
+            only(["ridged", "marble", "wood", "caustic"], pNum("sharpness", "Sharpness", 0.2, 4, 1, 0.05)),
+            only(["marble"], pNum("veins", "Veins", 1, 16, 4, 1)),
+            only(["marble"], pSel("direction", "Direction", [["horizontal", "Horizontal"], ["vertical", "Vertical"], ["diagonal", "Diagonal"]], "horizontal")),
+            only(["marble", "wood"], pNum("distortion", "Distortion", 0, 8, 2, 0.1)),
+            only(["wood"], pNum("rings", "Rings", 1, 32, 8, 1)),
+            only(["voronoi"], pSel("metric", "Distance", [["euclidean", "Euclidean"], ["manhattan", "Manhattan"], ["chebyshev", "Chebyshev"]], "euclidean")),
+            only(["voronoi"], pSel("mode", "Output", [["f1", "Distance (F1)"], ["f2", "Second distance (F2)"], ["edges", "Edges (F2 − F1)"], ["cell", "Cell value"]], "f1")),
+            only(["voronoi"], pNum("jitter", "Randomness", 0, 1, 1, 0.01)),
+            only(["moisture"], pNum("warp", "Warp", 0, 4, 1.5, 0.05)),
+            only(["gaussian"], pNum("spread", "Spread", 0.02, 0.5, 0.15, 0.01)),
+            only(["gaussian"], pNum("smooth", "Smoothing (px)", 0, 4, 0, 1)),
+            only(["caustic"], pNum("iterations", "Iterations", 2, 8, 5, 1)),
+            only(["caustic"], pNum("phase", "Phase", 0, 100, 0, 0.1)),
             pNum("seed", "Seed", 0, 99999, 1, 1),
           ],
         },
@@ -2329,23 +2358,152 @@
           b = n01 + (n11 - n01) * u;
         return (a + (b - a) * v) * 0.7071 + 0.5;
       };
-      const gNoise = (kind, scale, oct, pers, seed) => {
+      // ---- ruidos: todos con período entero (se repiten sin costuras) y calculados en la grilla
+      const nBase = (kind, u, w, per, s) => (kind === "value" ? procRuido(u, w, per, s) : gPerlin(u, w, per, s));
+      // Suma fractal. Las octavas que pasan la resolución de la grilla no aportan nada visible: se cortan.
+      const nFbm = (fx, fy, o, seed, shape) => {
+        const base = o.kind === "value" ? "value" : "perlin";
+        const tope = Math.max(W, H);
+        let v = 0,
+          amp = 1,
+          norm = 0,
+          per = o.scale;
+        for (let k = 0; k < o.octaves; k++) {
+          if (k > 0 && per > tope) break;
+          // corrimiento al azar de cada octava (no cambia el período, así que sigue repitiéndose)
+          const ox = procHash(k, 17, seed) * per,
+            oy = procHash(k, 31, seed) * per;
+          let n = nBase(base, fx * per + ox, fy * per + oy, per, seed + k * 131);
+          if (shape === "turbulence") n = Math.abs(2 * n - 1);
+          else if (shape === "ridged") n = Math.pow(1 - Math.abs(2 * n - 1), 1 + o.sharpness);
+          v += amp * n;
+          norm += amp;
+          amp *= o.persistence;
+          per *= o.lacunarity;
+        }
+        return v / norm;
+      };
+      const nVoronoi = (fx, fy, o) => {
+        const n = o.scale;
+        const u = fx * n,
+          v = fy * n;
+        const ci = Math.floor(u),
+          cj = Math.floor(v);
+        let d1 = Infinity,
+          d2 = Infinity,
+          cell = 0;
+        const R = o.mode === "f1" || o.mode === "cell" ? 1 : 2;
+        for (let j = -R; j <= R; j++)
+          for (let i = -R; i <= R; i++) {
+            const cx = ci + i,
+              cy = cj + j;
+            const mx = ((cx % n) + n) % n,
+              my = ((cy % n) + n) % n;
+            const px = cx + 0.5 + (procHash(mx, my, o.seed) - 0.5) * o.jitter,
+              py = cy + 0.5 + (procHash(my, mx, o.seed + 7) - 0.5) * o.jitter;
+            const dx = Math.abs(u - px),
+              dy = Math.abs(v - py);
+            const d = o.metric === "manhattan" ? dx + dy : o.metric === "chebyshev" ? Math.max(dx, dy) : Math.hypot(dx, dy);
+            if (d < d1) {
+              d2 = d1;
+              d1 = d;
+              cell = procHash(mx, my, o.seed + 99);
+            } else if (d < d2) d2 = d;
+          }
+        return o.mode === "f2" ? d2 : o.mode === "edges" ? d2 - d1 : o.mode === "cell" ? cell : d1;
+      };
+      // Cáusticas tipo agua (variante de un shader de dominio público muy conocido); casi sin costura
+      const nCaustic = (fx, fy, o) => {
+        const TAU = Math.PI * 2;
+        const px = ((fx * o.scale) % 1) * TAU - 250,
+          py = ((fy * o.scale) % 1) * TAU - 250;
+        let ix = px,
+          iy = py,
+          c = 1;
+        const inten = 0.005;
+        const time = o.phase * 0.5 + o.seed * 0.37 + 23;
+        for (let k = 0; k < o.iterations; k++) {
+          const t = time * (1 - 3.5 / (k + 1));
+          const nx = px + Math.cos(t - ix) + Math.sin(t + iy),
+            ny = py + Math.sin(t - iy) + Math.cos(t + ix);
+          ix = nx;
+          iy = ny;
+          c += 1 / Math.hypot(px / (Math.sin(ix + t) / inten), py / (Math.cos(iy + t) / inten));
+        }
+        c /= o.iterations;
+        c = 1.17 - Math.pow(c, 1.4);
+        return Math.pow(Math.abs(c), 8 * o.sharpness);
+      };
+      const nBlurWrap = (a) => {
         const t = new Float32Array(W * H);
         for (let y = 0; y < H; y++)
           for (let x = 0; x < W; x++) {
-            let v = 0,
-              amp = 1,
-              norm = 0;
-            for (let o = 0; o < oct; o++) {
-              const per = scale << o;
-              const u = (x / W) * per,
-                w = (y / H) * per;
-              const s = seed + o * 131;
-              v += amp * (kind === "value" ? procRuido(u, w, per, s) : gPerlin(u, w, per, s));
-              norm += amp;
-              amp *= pers;
+            let s = 0;
+            for (let j = -1; j <= 1; j++)
+              for (let i = -1; i <= 1; i++) s += a[(((y + j) % H) + H) % H * W + ((((x + i) % W) + W) % W)];
+            t[y * W + x] = s / 9;
+          }
+        return t;
+      };
+      // Ruido blanco con distribución normal (Box–Muller), con suavizado opcional
+      const nGaussian = (o) => {
+        let t = new Float32Array(W * H);
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            const u1 = Math.max(1e-7, procHash(x, y, o.seed)),
+              u2 = procHash(x, y, o.seed + 1);
+            t[y * W + x] = 0.5 + o.spread * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+          }
+        for (let s = 0; s < o.smooth; s++) t = nBlurWrap(t);
+        for (let i = 0; i < t.length; i++) t[i] = q16(t[i]);
+        return t;
+      };
+      const gNoise = (o) => {
+        if (o.kind === "gaussian") return nGaussian(o);
+        const t = new Float32Array(W * H);
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            const fx = (x + 0.5) / W,
+              fy = (y + 0.5) / H;
+            let v;
+            switch (o.kind) {
+              case "turbulence":
+              case "ridged":
+                v = nFbm(fx, fy, o, o.seed, o.kind);
+                break;
+              case "marble": {
+                const fb = nFbm(fx, fy, o, o.seed);
+                const b = o.direction === "vertical" ? fx * o.veins : o.direction === "diagonal" ? (fx + fy) * o.veins : fy * o.veins;
+                const s = Math.abs(Math.sin(Math.PI * (b + o.distortion * (fb - 0.5))));
+                v = Math.pow(1 - s, o.sharpness);
+                break;
+              }
+              case "wood": {
+                const fb = nFbm(fx, fy, o, o.seed);
+                let dx = fx - 0.5,
+                  dy = fy - 0.5;
+                dx -= Math.round(dx);
+                dy -= Math.round(dy);
+                const r = Math.hypot(dx, dy) * o.rings + o.distortion * (fb - 0.5);
+                v = Math.pow(r - Math.floor(r), o.sharpness);
+                break;
+              }
+              case "voronoi":
+                v = nVoronoi(fx, fy, o);
+                break;
+              case "moisture": {
+                const wx = nFbm(fx, fy, o, o.seed + 11) - 0.5,
+                  wy = nFbm(fx, fy, o, o.seed + 23) - 0.5;
+                v = nFbm(fx + (o.warp * wx) / o.scale, fy + (o.warp * wy) / o.scale, o, o.seed);
+                break;
+              }
+              case "caustic":
+                v = nCaustic(fx, fy, o);
+                break;
+              default:
+                v = nFbm(fx, fy, o, o.seed);
             }
-            t[y * W + x] = v / norm;
+            t[y * W + x] = v;
           }
         return stretch01(t);
       };
@@ -2576,7 +2734,28 @@
           return graphParam(n, def);
         };
         switch (n.type) {
-          case "noise": return gNoise(P("kind"), Math.round(P("scale")), Math.round(P("octaves")), P("persistence"), Math.round(P("seed")));
+          case "noise":
+            return gNoise({
+              kind: P("kind"),
+              scale: Math.max(1, Math.round(P("scale"))),
+              octaves: Math.round(P("octaves")),
+              persistence: P("persistence"),
+              lacunarity: Math.round(P("lacunarity")),
+              sharpness: P("sharpness"),
+              veins: Math.round(P("veins")),
+              direction: P("direction"),
+              distortion: P("distortion"),
+              rings: Math.round(P("rings")),
+              metric: P("metric"),
+              mode: P("mode"),
+              jitter: P("jitter"),
+              warp: P("warp"),
+              spread: P("spread"),
+              smooth: Math.round(P("smooth")),
+              iterations: Math.round(P("iterations")),
+              phase: P("phase"),
+              seed: Math.round(P("seed")),
+            });
           case "cells": return gCells(Math.round(P("scale")), Math.round(P("seed")));
           case "stripes": return gStripes(Math.round(P("count")), P("width"), P("direction"));
           case "checker": return gChecker(Math.round(P("count")));
@@ -2819,7 +2998,10 @@
         const title = document.createElement("strong");
         title.textContent = NODE_TYPES[n.type].name;
         box.append(title);
+        const kindDef = NODE_TYPES[n.type].params.find((d) => d.k === "kind");
+        const kind = kindDef ? graphParam(n, kindDef) : null;
         for (const def of NODE_TYPES[n.type].params) {
+          if (def.when && !def.when.includes(kind)) continue;
           const val = graphParam(n, def);
           const row = document.createElement("label");
           row.textContent = def.label;
@@ -2827,6 +3009,7 @@
             n.p = n.p || {};
             n.p[def.k] = v;
             graphChanged();
+            if (def.k === "kind") graphParamsPanel();
           };
           if (def.t === "select") {
             const sel = document.createElement("select");
