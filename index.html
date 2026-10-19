@@ -748,6 +748,31 @@
         <div class="hint">Se aplican a la selección o, si no hay, a la capa actual. Se pueden deshacer.</div>
       </div>
       <div class="section">
+        <h2>Textura procedural</h2>
+        <select id="procTipo">
+          <option value="ruido">Ruido (nubes, pasto, arena)</option>
+          <option value="celdas">Celdas (piedra, escamas)</option>
+        </select>
+        <label>Escala: <span id="procEscalaVal">4</span></label>
+        <input type="range" id="procEscala" min="2" max="16" value="4" />
+        <label>Detalle (octavas): <span id="procOctVal">3</span></label>
+        <input type="range" id="procOct" min="1" max="4" value="3" />
+        <label>Niveles de color: <span id="procNivVal">4</span></label>
+        <input type="range" id="procNiv" min="2" max="8" value="4" />
+        <label>Contraste: <span id="procContVal">1</span></label>
+        <input type="range" id="procCont" min="0.5" max="3" step="0.1" value="1" />
+        <label>Color B: <input type="color" id="procB" value="#202020" style="width: 60px; height: 28px; padding: 0; border: none; background: none" /></label>
+        <label>Semilla: <input type="number" id="procSeed" value="1" min="0" max="99999" style="width: 90px" /></label>
+        <div class="tool-grid">
+          <button id="procGen" title="Genera la textura en la capa actual (o en la selección)">▦ Generar</button>
+          <button id="procSeedBtn" title="Cambia la semilla y genera otra textura">🎲 Otra semilla</button>
+        </div>
+        <div class="hint">
+          Color A es el color actual; Color B es el otro. Reemplaza lo que hay en la capa (o la selección) y se puede deshacer.
+          Se repite sin costuras: probala en modo Tile.
+        </div>
+      </div>
+      <div class="section">
         <h2>Efectos</h2>
         <label>Glow (radio): <span id="fxVal">0</span></label>
         <input type="range" id="fxSlider" min="0" max="5" value="0" />
@@ -1665,6 +1690,112 @@
       const fexp = (f = cf) => fin(f).map((r) => r.map((p) => (p.e ? { c: "#000000", a: 0 } : p)));
       // «Aplicar»: lo que se ve (reborde y glow) pasa a píxeles de la capa actual, donde estaba vacío.
       // Después se puede seguir pintando encima. Se puede deshacer.
+      // ---------- textura procedural: todo con período entero en celdas, así se repite sin costuras
+      const procHash = (ix, iy, s) => {
+        let k = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(s, 1442695041)) | 0;
+        k = Math.imul(k ^ (k >>> 13), 1274126177);
+        k ^= k >>> 16;
+        return (k >>> 0) / 4294967296;
+      };
+      const procSmooth = (t) => t * t * (3 - 2 * t);
+      const procRuido = (x, y, per, s) => {
+        const x0 = Math.floor(x),
+          y0 = Math.floor(y);
+        const fx = procSmooth(x - x0),
+          fy = procSmooth(y - y0);
+        const m = (n) => ((n % per) + per) % per;
+        const a = procHash(m(x0), m(y0), s),
+          b = procHash(m(x0 + 1), m(y0), s);
+        const c = procHash(m(x0), m(y0 + 1), s),
+          d = procHash(m(x0 + 1), m(y0 + 1), s);
+        return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
+      };
+      const procCeldas = (x, y, per, s) => {
+        const x0 = Math.floor(x),
+          y0 = Math.floor(y);
+        let mejor = Infinity;
+        for (let j = -1; j <= 1; j++)
+          for (let i = -1; i <= 1; i++) {
+            const cx = x0 + i,
+              cy = y0 + j;
+            const mx = ((cx % per) + per) % per,
+              my = ((cy % per) + per) % per;
+            const px = cx + procHash(mx, my, s),
+              py = cy + procHash(my, mx, s + 7);
+            mejor = Math.min(mejor, Math.hypot(x - px, y - py));
+          }
+        return 1 - Math.min(1, mejor);
+      };
+      const procMezcla = (p, q, t) => p.map((v, i) => Math.round(v + (q[i] - v) * t));
+      const generarProc = () => {
+        if (layerLocked()) return;
+        const tipo = document.getElementById("procTipo").value;
+        const escala = Number(document.getElementById("procEscala").value);
+        const oct = Number(document.getElementById("procOct").value);
+        const niv = Number(document.getElementById("procNiv").value);
+        const cont = Number(document.getElementById("procCont").value);
+        const s = Math.max(0, Math.floor(Number(document.getElementById("procSeed").value) || 0));
+        const colA = rgbOf(color);
+        const cA = [colA.r, colA.g, colA.b];
+        const cB = rgbOf(document.getElementById("procB").value);
+        const colB = [cB.r, cB.g, cB.b];
+        const campo = [];
+        let lo = Infinity,
+          hi = -Infinity;
+        for (let y = 0; y < H; y++) {
+          const fila = [];
+          for (let x = 0; x < W; x++) {
+            const u = (x / W) * escala,
+              v = (y / H) * escala;
+            let t;
+            if (tipo === "celdas") {
+              t = procCeldas(u, v, escala, s);
+            } else {
+              t = 0;
+              let amp = 1,
+                norm = 0;
+              for (let o = 0; o < oct; o++) {
+                const per = escala << o;
+                t += amp * procRuido((x / W) * per, (y / H) * per, per, s + o * 131);
+                norm += amp;
+                amp *= 0.5;
+              }
+              t /= norm;
+            }
+            fila.push(t);
+            if (t < lo) lo = t;
+            if (t > hi) hi = t;
+          }
+          campo.push(fila);
+        }
+        // se estira a todo el rango 0–1, después contraste y niveles
+        const rango = hi - lo || 1;
+        snapGrid();
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            if (!inSel(x, y)) continue;
+            let t = (campo[y][x] - lo) / rango;
+            t = Math.max(0, Math.min(1, (t - 0.5) * cont + 0.5));
+            const k = Math.round(t * (niv - 1)) / (niv - 1);
+            const c = procMezcla(cA, colB, k);
+            grid[y][x] = { c: toHex(c[0], c[1], c[2]), a: 1 };
+          }
+        }
+        updateExport();
+        redraw();
+      };
+      document.getElementById("procGen").addEventListener("click", generarProc);
+      document.getElementById("procSeedBtn").addEventListener("click", () => {
+        document.getElementById("procSeed").value = 1 + Math.floor(Math.random() * 99998);
+        generarProc();
+      });
+      [["procEscala", "procEscalaVal"], ["procOct", "procOctVal"], ["procNiv", "procNivVal"], ["procCont", "procContVal"]].forEach(
+        ([id, vid]) =>
+          document.getElementById(id).addEventListener("input", (e) => {
+            document.getElementById(vid).textContent = e.target.value;
+          }),
+      );
+
       const applyFx = () => {
         if (layerLocked()) return;
         const base = flat(cf);

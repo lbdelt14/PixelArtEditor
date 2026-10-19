@@ -20,6 +20,7 @@ Funciona con el dedo y se puede instalar como app: en iPhone, abrí el link en S
 - Reborde con grosor y color, y glow con radio: se ven en vivo sobre el dibujo y **✓ Aplicar** los pasa a píxeles para seguir pintando encima. Botón "negro = transparente".
 - Capas con nombre editable, **carpetas** (ocultar, bloquear y plegar en grupo), **candado**, **opacidad** y modos de fusión (normal, multiplicar, pantalla, superponer, oscurecer, aclarar, sumar, diferencia).
 - Animación (se muestra con el botón 🎞): cantidad de frames, duplicar frame, primero/anterior/play/pausa/stop/siguiente/último, FPS y onion skin.
+- **Textura procedural**: ruido (nubes, pasto, arena) o celdas (piedra, escamas), con escala, detalle, niveles, contraste, dos colores y semilla. Se repite sin costuras (probala en modo Tile).
 - Importar imagen (PNG/JPG) a la grilla, con opción de ajustar a la paleta.
 - Exporta JSON y BIN en escala de grises (para pantallas monocromáticas), JSON de animación, PNG, PNG sprite sheet y **GIF animado**. Tamaño de salida ×1 a ×16 o exacto en px (256, 512, 1024 para íconos de app), siempre con píxeles nítidos. **Compartir PNG** por mail o mensajes.
 - 20 íconos y dibujos prediseñados: se pueden guardar como ícono de la app o cargar en el lienzo.
