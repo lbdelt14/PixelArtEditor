@@ -2122,14 +2122,26 @@
           params: [
             pNum("offsetX", "Offset X", -64, 64, 0, 1),
             pNum("offsetY", "Offset Y", -64, 64, 0, 1),
-            pSel("rotate", "Rotate", [["0", "0°"], ["90", "90°"], ["180", "180°"], ["270", "270°"]], "0"),
+            pNum("rotate", "Rotation (°)", 0, 360, 0, 1),
             pSel("flipX", "Flip X", [["no", "No"], ["yes", "Yes"]], "no"),
             pSel("flipY", "Flip Y", [["no", "No"], ["yes", "Yes"]], "no"),
           ],
         },
         tile: {
-          name: "Tile", inputs: [["In", "gray"]], output: "gray",
-          params: [pNum("countX", "Repeats X", 1, 8, 2, 1), pNum("countY", "Repeats Y", 1, 8, 2, 1)],
+          name: "Tile Sampler", inputs: [["Pattern", "gray"]], output: "gray",
+          params: [
+            pNum("countX", "Count X", 1, 16, 4, 1),
+            pNum("countY", "Count Y", 1, 16, 4, 1),
+            pNum("scale", "Scale", 0.05, 2, 1, 0.01),
+            pNum("rotation", "Rotation (°)", 0, 360, 0, 1),
+            pNum("rowOffset", "Row offset", 0, 1, 0, 0.01),
+            pNum("randPosition", "Random position", 0, 1, 0, 0.01),
+            pNum("randRotation", "Random rotation (°)", 0, 360, 0, 1),
+            pNum("randScale", "Random scale", 0, 1, 0, 0.01),
+            pNum("randMask", "Random mask", 0, 1, 0, 0.01),
+            pNum("randLuminance", "Random luminance", 0, 1, 0, 0.01),
+            pNum("seed", "Seed", 0, 99999, 1, 1),
+          ],
         },
         gradient: {
           name: "Gradient", inputs: [["Gray", "gray"]], output: "color",
@@ -2315,22 +2327,98 @@
         for (let i = 0; i < t.length; i++) t[i] = q16(Math.pow(Math.max(0, Math.min(1, (a[i] - black) / r)), gamma));
         return t;
       };
+      // Para cada píxel de salida se busca de dónde viene en la entrada: se deshace el desplazamiento, el
+      // espejado y el giro, en ese orden. El centro es (W/2, H/2), el mismo que usa Polygon con centro 0.5,
+      // y el ángulo positivo gira en el mismo sentido. Todo da la vuelta por los bordes. Con múltiplos de
+      // 90° es una permutación exacta de píxeles; con otros ángulos se toma el píxel más cercano.
       const gTransform = (a, offX, offY, rot, flipX, flipY) => {
         const t = new Float32Array(W * H);
-        const turn = rot === "90" || rot === "270";
-        const usable = { rot: turn && W !== H ? "0" : rot };
+        const th = (rot * Math.PI) / 180;
+        const fix = (v) => (Math.abs(v) < 1e-9 ? 0 : Math.abs(v - 1) < 1e-9 ? 1 : Math.abs(v + 1) < 1e-9 ? -1 : v);
+        const co = fix(Math.cos(th)),
+          si = fix(Math.sin(th));
+        const cx = W / 2,
+          cy = H / 2;
         for (let y = 0; y < H; y++)
           for (let x = 0; x < W; x++) {
-            let sx = x,
-              sy = y;
-            if (usable.rot === "90") [sx, sy] = [y, W - 1 - x];
-            else if (usable.rot === "180") [sx, sy] = [W - 1 - x, H - 1 - y];
-            else if (usable.rot === "270") [sx, sy] = [H - 1 - y, x];
-            if (flipX === "yes") sx = W - 1 - sx;
-            if (flipY === "yes") sy = H - 1 - sy;
-            sx = (((sx + offX) % W) + W) % W;
-            sy = (((sy + offY) % H) + H) % H;
+            let qx = x - offX,
+              qy = y - offY;
+            if (flipX === "yes") qx = W - qx;
+            if (flipY === "yes") qy = H - qy;
+            const dx = qx - cx,
+              dy = qy - cy;
+            let sx = Math.round(cx + dx * co + dy * si),
+              sy = Math.round(cy - dx * si + dy * co);
+            sx = ((sx % W) + W) % W;
+            sy = ((sy % H) + H) % H;
             t[y * W + x] = a[sy * W + sx];
+          }
+        return t;
+      };
+      // Tile Sampler: una grilla de copias del patrón de entrada, una por celda.
+      // Cada celda tiene sus valores al azar (posición, giro, escala, si aparece y brillo), calculados con
+      // el índice de la celda dando la vuelta, así el resultado se repite sin costuras.
+      // Donde se superponen copias queda la más clara. Cada píxel de salida promedia varias muestras
+      // dentro de él: al achicar el patrón no se saltean píxeles (eso rompía las formas en 2×2).
+      const gTileSampler = (a, o) => {
+        const t = new Float32Array(W * H);
+        const nx = Math.max(1, o.countX),
+          ny = Math.max(1, o.countY);
+        const celdas = [];
+        for (let j = 0; j < ny; j++)
+          for (let i = 0; i < nx; i++) {
+            const r = (k) => procHash(i, j, o.seed * 7 + k);
+            const s = Math.max(0.01, o.scale * (1 - o.randScale * r(2)));
+            const rot = ((o.rotation + o.randRotation * r(3)) * Math.PI) / 180;
+            celdas.push({
+              visible: r(1) >= o.randMask,
+              s,
+              co: Math.cos(rot),
+              si: Math.sin(rot),
+              jx: (r(4) - 0.5) * o.randPosition,
+              jy: (r(5) - 0.5) * o.randPosition,
+              lum: 1 - o.randLuminance * r(6),
+            });
+          }
+        // celdas vecinas que pueden tapar un punto (por escala, giro, posición al azar y desfase de fila)
+        const alcance = Math.ceil(o.scale * 0.75 + o.randPosition / 2 + o.rowOffset) + 1;
+        // valor en un punto (u, v), en unidades de celda
+        const valorEn = (u, v) => {
+          const ci = Math.floor(u),
+            cj = Math.floor(v);
+          let best = 0;
+          for (let dj = -alcance; dj <= alcance; dj++)
+            for (let di = -alcance; di <= alcance; di++) {
+              const j = cj + dj,
+                i = ci + di;
+              const jw = ((j % ny) + ny) % ny;
+              const iw = ((i % nx) + nx) % nx;
+              const c = celdas[jw * nx + iw];
+              if (!c.visible) continue;
+              const shift = jw % 2 === 1 ? o.rowOffset : 0;
+              const dx = u - (i + 0.5 + shift + c.jx),
+                dy = v - (j + 0.5 + c.jy);
+              const px = (dx * c.co + dy * c.si) / c.s + 0.5,
+                py = (-dx * c.si + dy * c.co) / c.s + 0.5;
+              if (px < 0 || px >= 1 || py < 0 || py >= 1) continue;
+              const val = a[Math.floor(py * H) * W + Math.floor(px * W)] * c.lum;
+              if (val > best) best = val;
+            }
+          return best;
+        };
+        // muestras por píxel: tantas como píxeles de la entrada caen en uno de salida (hasta 4×4)
+        const minS = Math.max(0.05, o.scale * (1 - o.randScale));
+        const k = Math.min(4, Math.max(1, Math.ceil(Math.max(nx, ny) / minS)));
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            let suma = 0;
+            for (let sy = 0; sy < k; sy++)
+              for (let sx = 0; sx < k; sx++) {
+                const u = ((x + (sx + 0.5) / k) / W) * nx,
+                  v = ((y + (sy + 0.5) / k) / H) * ny;
+                suma += valorEn(u, v);
+              }
+            t[y * W + x] = q16(suma / (k * k));
           }
         return t;
       };
@@ -2359,7 +2447,11 @@
       // Lee los parámetros de un nodo, con su valor por defecto
       const graphParam = (n, def) => {
         const v = n.p ? n.p[def.k] : undefined;
-        if (def.t === "num") return typeof v === "number" && isFinite(v) ? v : def.def;
+        if (def.t === "num") {
+          if (typeof v === "number" && isFinite(v)) return v;
+          const n = typeof v === "string" ? parseFloat(v) : NaN;
+          return isFinite(n) ? n : def.def;
+        }
         if (def.t === "select") return def.opts.some(([val]) => val === v) ? v : def.def;
         return typeof v === "string" ? v : def.def;
       };
@@ -2378,7 +2470,22 @@
           case "polygon": return gPolygon(P("shape"), P("size"), P("centerX"), P("centerY"), P("rotation"));
           case "invert": return ins[0] ? Float32Array.from(ins[0], (v) => 1 - v) : null;
           case "transform": return ins[0] ? gTransform(ins[0], Math.round(P("offsetX")), Math.round(P("offsetY")), P("rotate"), P("flipX"), P("flipY")) : null;
-          case "tile": return ins[0] ? gTile(ins[0], Math.round(P("countX")), Math.round(P("countY"))) : null;
+          case "tile":
+            return ins[0]
+              ? gTileSampler(ins[0], {
+                  countX: Math.round(P("countX")),
+                  countY: Math.round(P("countY")),
+                  scale: P("scale"),
+                  rotation: P("rotation"),
+                  rowOffset: P("rowOffset"),
+                  randPosition: P("randPosition"),
+                  randRotation: P("randRotation"),
+                  randScale: P("randScale"),
+                  randMask: P("randMask"),
+                  randLuminance: P("randLuminance"),
+                  seed: Math.round(P("seed")),
+                })
+              : null;
           case "gradient": {
             if (!ins[0]) return null;
             const stops = [1, 2, 3].map((i) => ({ p: P("p" + i), c: hexRgb(P("c" + i)) }));
