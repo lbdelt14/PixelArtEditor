@@ -2160,9 +2160,11 @@
         levels: {
           name: "Levels", inputs: [["In", "gray"]], output: "gray",
           params: [
-            pNum("black", "Black point", 0, 1, 0, 0.01),
-            pNum("white", "White point", 0, 1, 1, 0.01),
+            pNum("black", "Input black", 0, 1, 0, 0.01),
+            pNum("white", "Input white", 0, 1, 1, 0.01),
             pNum("gamma", "Gamma", 0.2, 3, 1, 0.05),
+            pNum("outBlack", "Output black", 0, 1, 0, 0.01),
+            pNum("outWhite", "Output white", 0, 1, 1, 0.01),
           ],
         },
         polygon: {
@@ -2380,10 +2382,15 @@
         }
         return out;
       };
-      const gLevels = (a, black, white, gamma) => {
+      // Entrada: lo que está por debajo de «black» queda en 0 y lo que está por encima de «white» en 1.
+      // Salida: ese 0–1 se lleva a outBlack–outWhite (subir outBlack levanta el piso; si se cruzan, invierte).
+      const gLevels = (a, black, white, gamma, outBlack = 0, outWhite = 1) => {
         const t = new Float32Array(W * H);
         const r = Math.max(1e-4, white - black);
-        for (let i = 0; i < t.length; i++) t[i] = q16(Math.pow(Math.max(0, Math.min(1, (a[i] - black) / r)), gamma));
+        for (let i = 0; i < t.length; i++) {
+          const v = Math.pow(Math.max(0, Math.min(1, (a[i] - black) / r)), gamma);
+          t[i] = q16(outBlack + (outWhite - outBlack) * v);
+        }
         return t;
       };
       // Para cada píxel de salida se busca de dónde viene en la entrada: se deshace el desplazamiento, el
@@ -2525,7 +2532,7 @@
           case "stripes": return gStripes(Math.round(P("count")), P("width"), P("direction"));
           case "checker": return gChecker(Math.round(P("count")));
           case "blend": return ins[0] && ins[1] ? gBlend(ins[0], ins[1], P("mode"), P("opacity"), ins[2]) : null;
-          case "levels": return ins[0] ? gLevels(ins[0], P("black"), P("white"), P("gamma")) : null;
+          case "levels": return ins[0] ? gLevels(ins[0], P("black"), P("white"), P("gamma"), P("outBlack"), P("outWhite")) : null;
           case "polygon": return gPolygon(P("shape"), P("size"), P("centerX"), P("centerY"), P("rotation"));
           case "invert": return ins[0] ? Float32Array.from(ins[0], (v) => 1 - v) : null;
           case "transform": return ins[0] ? gTransform(ins[0], Math.round(P("offsetX")), Math.round(P("offsetY")), P("rotate"), P("flipX"), P("flipY")) : null;
