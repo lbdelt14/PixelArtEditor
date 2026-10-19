@@ -647,6 +647,87 @@
         background: #111;
         border: 1px solid #3b4252;
       }
+      #goPrevWrap {
+        position: sticky;
+        top: -10px;
+        z-index: 2;
+        align-self: flex-start;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px 0 6px;
+        margin-top: -10px;
+        background: #1b1d22;
+      }
+      #goSplit {
+        display: none;
+      }
+      @media (min-width: 821px) {
+        #goPrevWrap {
+          align-self: stretch;
+        }
+        #goSplit {
+          display: block;
+          flex: none;
+          width: 6px;
+          cursor: col-resize;
+          background: #2c313b;
+          touch-action: none;
+        }
+        #goSplit:hover,
+        #goSplit.drag {
+          background: #6aa9ff;
+        }
+        .go-side {
+          flex: none;
+        }
+      }
+      #goPrevBox {
+        position: relative;
+        overflow: hidden;
+        flex: none;
+        width: 160px;
+        height: 160px;
+        background: #111;
+        border: 1px solid #3b4252;
+        touch-action: none;
+        cursor: zoom-in;
+      }
+      #goPrevBox.zoomed {
+        cursor: grab;
+      }
+      #goPrevInner {
+        position: absolute;
+        inset: 0;
+        transform-origin: 0 0;
+      }
+      #goPrevBox #goPrev {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+      #goPrevFrame {
+        display: none;
+        position: absolute;
+        left: 33.3333%;
+        top: 33.3333%;
+        width: 33.3333%;
+        height: 33.3333%;
+        border: 2px solid #ff3b3b;
+        box-sizing: border-box;
+        pointer-events: none;
+      }
+      #goPrevBox.tile3:hover #goPrevFrame {
+        display: block;
+      }
+      @media (min-width: 821px) {
+        #goPrevBox {
+          width: 100%;
+          height: auto;
+          aspect-ratio: 1;
+        }
+      }
       #goParams {
         flex: 1;
         min-width: 0;
@@ -1167,9 +1248,12 @@
             <div id="goNodes"></div>
           </div>
         </div>
+        <div id="goSplit" title="Drag to resize the panel"></div>
         <aside class="go-side">
-          <button id="goTile" type="button" title="Switch between the single tile and the 3×3 repeat (the original is marked in the center)">▦ 3×3</button>
-          <canvas id="goPrev" title="Preview: the original in the center, repeated around it"></canvas>
+          <div id="goPrevWrap">
+            <button id="goTile" type="button" title="Switch between the single tile and the 3×3 repeat (the original is marked in the center)">▦ 3×3</button>
+            <div id="goPrevBox" class="tile3" title="Wheel: zoom · Drag: move · Double-click: reset"><div id="goPrevInner"><canvas id="goPrev"></canvas><div id="goPrevFrame"></div></div></div>
+          </div>
           <div id="goParams"></div>
         </aside>
       </div>
@@ -2857,11 +2941,6 @@
                 img.data[d + 3] = 255;
               }
         c2.putImageData(img, 0, 0);
-        if (graphTileView) {
-          c2.strokeStyle = "#ff3b3b";
-          c2.lineWidth = 1;
-          c2.strokeRect(W + 0.5, H + 0.5, W - 1, H - 1);
-        }
         if (target)
           goMsg(`Showing: ${NODE_TYPES[graphNodeById(target).type].name}${res instanceof Float32Array ? " (grayscale)" : ""}. Tap the empty area to go back.`);
         else goMsg(col ? "" : "Connect a Gradient or a Color source to the Output.");
@@ -3445,15 +3524,106 @@
         graphMenuBuild();
         document.getElementById("goMenu").hidden = !document.getElementById("goMenu").hidden;
       });
+      // Ancho del panel lateral: se arrastra el borde izquierdo (entre 220 px y lo que deje 300 px al grafo)
+      const goSplit = document.getElementById("goSplit");
+      const goSide = document.querySelector(".go-side");
+      const sideWidthSet = (w) => {
+        const max = Math.max(220, window.innerWidth - 300);
+        const v = Math.round(Math.max(220, Math.min(max, w)));
+        goSide.style.width = v + "px";
+        return v;
+      };
+      try {
+        const guardado = parseInt(localStorage.getItem("pae-graph-side"), 10);
+        if (guardado > 0 && window.matchMedia("(min-width: 821px)").matches) sideWidthSet(guardado);
+      } catch (e) {}
+      let sideDrag = null;
+      goSplit.addEventListener("pointerdown", (e) => {
+        sideDrag = { id: e.pointerId };
+        goSplit.classList.add("drag");
+        goSplit.setPointerCapture(e.pointerId);
+        e.preventDefault();
+      });
+      goSplit.addEventListener("pointermove", (e) => {
+        if (!sideDrag || e.pointerId !== sideDrag.id) return;
+        const derecha = document.querySelector(".go-body").getBoundingClientRect().right;
+        sideWidthSet(derecha - e.clientX);
+        prevZoomApply();
+      });
+      const sideDragEnd = () => {
+        if (!sideDrag) return;
+        sideDrag = null;
+        goSplit.classList.remove("drag");
+        try {
+          localStorage.setItem("pae-graph-side", String(goSide.offsetWidth));
+        } catch (e) {}
+      };
+      goSplit.addEventListener("pointerup", sideDragEnd);
+      goSplit.addEventListener("pointercancel", sideDragEnd);
+      // Zoom de la vista previa: escala 1 a 8, la imagen siempre cubre el recuadro
+      const goPrevBox = document.getElementById("goPrevBox");
+      let prevZoom = { s: 1, x: 0, y: 0 };
+      let prevDrag = null;
+      let prevMoved = false;
+      const prevZoomApply = () => {
+        const w = goPrevBox.clientWidth,
+          hh = goPrevBox.clientHeight;
+        prevZoom.x = Math.min(0, Math.max(w * (1 - prevZoom.s), prevZoom.x));
+        prevZoom.y = Math.min(0, Math.max(hh * (1 - prevZoom.s), prevZoom.y));
+        document.getElementById("goPrevInner").style.transform = `translate(${prevZoom.x}px, ${prevZoom.y}px) scale(${prevZoom.s})`;
+        goPrevBox.classList.toggle("zoomed", prevZoom.s > 1);
+      };
+      const prevZoomReset = () => {
+        prevZoom = { s: 1, x: 0, y: 0 };
+        prevZoomApply();
+      };
+      goPrevBox.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          const r = goPrevBox.getBoundingClientRect();
+          const px = e.clientX - r.left,
+            py = e.clientY - r.top;
+          const giro = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+          const s = Math.max(1, Math.min(8, prevZoom.s * Math.exp(-giro * 0.0015)));
+          // el punto bajo el puntero queda en su lugar
+          prevZoom.x = px - ((px - prevZoom.x) * s) / prevZoom.s;
+          prevZoom.y = py - ((py - prevZoom.y) * s) / prevZoom.s;
+          prevZoom.s = s;
+          prevZoomApply();
+        },
+        { passive: false },
+      );
+      goPrevBox.addEventListener("pointerdown", (e) => {
+        prevMoved = false;
+        if (prevZoom.s <= 1 || e.button !== 0) return;
+        prevDrag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, x: prevZoom.x, y: prevZoom.y };
+        goPrevBox.setPointerCapture(e.pointerId);
+      });
+      goPrevBox.addEventListener("pointermove", (e) => {
+        if (!prevDrag || e.pointerId !== prevDrag.id) return;
+        const dx = e.clientX - prevDrag.sx,
+          dy = e.clientY - prevDrag.sy;
+        if (Math.hypot(dx, dy) > 3) prevMoved = true;
+        prevZoom.x = prevDrag.x + dx;
+        prevZoom.y = prevDrag.y + dy;
+        prevZoomApply();
+      });
+      goPrevBox.addEventListener("pointerup", () => (prevDrag = null));
+      goPrevBox.addEventListener("pointercancel", () => (prevDrag = null));
+      goPrevBox.addEventListener("dblclick", prevZoomReset);
       // Tile view: 3×3 in the panel, or 1 tile. Tapping the image also switches back to 3×3.
       const graphSetTileView = (v) => {
         graphTileView = v;
         document.getElementById("goTile").textContent = graphTileView ? "▦ 3×3" : "▢ 1 tile";
         document.getElementById("goPrev").classList.toggle("go-full", !graphTileView);
+        goPrevBox.classList.toggle("tile3", graphTileView);
+        prevZoomReset();
         graphPreview();
       };
       document.getElementById("goTile").addEventListener("click", () => graphSetTileView(!graphTileView));
       document.getElementById("goPrev").addEventListener("click", () => {
+        if (prevMoved || prevZoom.s > 1) return;
         if (!graphTileView) graphSetTileView(true);
       });
       document.addEventListener("keydown", (e) => {
