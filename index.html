@@ -2293,6 +2293,18 @@
             pNum("rotation", "Rotation (°)", 0, 360, 0, 1),
           ],
         },
+        blur: {
+          name: "Blur", inputs: [["In", "any"]], output: "any",
+          params: [pNum("radius", "Radius (px)", 0, 16, 2, 1)],
+        },
+        warp: {
+          name: "Warp", inputs: [["In", "any"], ["Warp map", "gray"]], output: "any",
+          params: [
+            pSel("kind", "Mode", [["gradient", "Gradient (slope)"], ["directional", "Directional"]], "gradient"),
+            pNum("intensity", "Intensity (px)", 0, 64, 8, 0.5),
+            only(["directional"], pNum("angle", "Angle (°)", 0, 360, 0, 1)),
+          ],
+        },
         invert: { name: "Invert", inputs: [["In", "gray"]], output: "gray", params: [] },
         transform: {
           name: "Transform", inputs: [["In", "gray"]], output: "gray",
@@ -2699,6 +2711,86 @@
           }
         return t;
       };
+      // Pasar gris (1 canal, 0–1) o color (3 canales, 0–255) a números con coma, y de vuelta
+      const chOf = (a) => (a instanceof Float32Array ? 1 : 3);
+      const toFloat = (a) => (a instanceof Float32Array ? a : Float32Array.from(a));
+      const fromFloat = (t, ch) => {
+        if (ch === 1) {
+          for (let i = 0; i < t.length; i++) t[i] = q16(t[i]);
+          return t;
+        }
+        return Uint8ClampedArray.from(t, (v) => Math.round(v));
+      };
+      // Blur: tres pasadas de promedio en caja (se parece mucho a un gaussiano), dando la vuelta por los bordes
+      const gBlur = (a, r) => {
+        const ch = chOf(a);
+        let t = Float32Array.from(toFloat(a));
+        if (r < 1) return fromFloat(t, ch);
+        const pasada = (src, horiz) => {
+          const out = new Float32Array(src.length);
+          const n = 2 * r + 1;
+          for (let y = 0; y < H; y++)
+            for (let x = 0; x < W; x++)
+              for (let c = 0; c < ch; c++) {
+                let s = 0;
+                for (let k = -r; k <= r; k++) {
+                  const xx = horiz ? (((x + k) % W) + W) % W : x,
+                    yy = horiz ? y : (((y + k) % H) + H) % H;
+                  s += src[(yy * W + xx) * ch + c];
+                }
+                out[(y * W + x) * ch + c] = s / n;
+              }
+          return out;
+        };
+        for (let p = 0; p < 3; p++) t = pasada(pasada(t, true), false);
+        return fromFloat(t, ch);
+      };
+      // Warp: cada píxel toma el valor de otra posición, corrida según el mapa (con interpolación y vuelta por los bordes).
+      // Gradient: hacia la pendiente del mapa. Directional: en el ángulo elegido, según el valor del mapa.
+      // «intensity» es el corrimiento máximo en píxeles.
+      const gWarp = (a, map, mode, intensity, angle) => {
+        const ch = chOf(a);
+        const src = toFloat(a);
+        const out = new Float32Array(W * H * ch);
+        const m = (x, y) => map[((((y % H) + H) % H) * W) + ((((x % W) + W) % W))];
+        const dxs = new Float32Array(W * H),
+          dys = new Float32Array(W * H);
+        if (mode === "directional") {
+          const th = (angle * Math.PI) / 180;
+          for (let i = 0; i < W * H; i++) {
+            dxs[i] = Math.cos(th) * map[i] * intensity;
+            dys[i] = Math.sin(th) * map[i] * intensity;
+          }
+        } else {
+          let max = 1e-6;
+          for (let y = 0; y < H; y++)
+            for (let x = 0; x < W; x++) {
+              const gx = (m(x + 1, y) - m(x - 1, y)) / 2,
+                gy = (m(x, y + 1) - m(x, y - 1)) / 2;
+              dxs[y * W + x] = gx;
+              dys[y * W + x] = gy;
+              max = Math.max(max, Math.hypot(gx, gy));
+            }
+          for (let i = 0; i < W * H; i++) {
+            dxs[i] = (dxs[i] / max) * intensity;
+            dys[i] = (dys[i] / max) * intensity;
+          }
+        }
+        const g = (xx, yy, c) => src[(((((yy % H) + H) % H) * W) + ((((xx % W) + W) % W))) * ch + c];
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            const fx = x + dxs[y * W + x],
+              fy = y + dys[y * W + x];
+            const x0 = Math.floor(fx),
+              y0 = Math.floor(fy),
+              tx = fx - x0,
+              ty = fy - y0;
+            for (let c = 0; c < ch; c++)
+              out[(y * W + x) * ch + c] =
+                (g(x0, y0, c) * (1 - tx) + g(x0 + 1, y0, c) * tx) * (1 - ty) + (g(x0, y0 + 1, c) * (1 - tx) + g(x0 + 1, y0 + 1, c) * tx) * ty;
+          }
+        return fromFloat(out, ch);
+      };
       const blendPixel = (mode, a, b) => {
         switch (mode) {
           case "multiply": return a * b;
@@ -2927,6 +3019,10 @@
           }
           case "levels": return ins[0] ? gLevels(ins[0], P("black"), P("white"), P("gamma"), P("outBlack"), P("outWhite")) : null;
           case "polygon": return gPolygon(P("shape"), P("size"), P("centerX"), P("centerY"), P("rotation"));
+          case "blur": return ins[0] ? gBlur(ins[0], Math.round(P("radius"))) : null;
+          case "warp":
+            if (!ins[0]) return null;
+            return ins[1] instanceof Float32Array ? gWarp(ins[0], ins[1], P("kind"), P("intensity"), P("angle")) : ins[0];
           case "invert": return ins[0] ? Float32Array.from(ins[0], (v) => 1 - v) : null;
           case "transform": return ins[0] ? gTransform(ins[0], Math.round(P("offsetX")), Math.round(P("offsetY")), P("rotate"), P("flipX"), P("flipY")) : null;
           case "tile":
