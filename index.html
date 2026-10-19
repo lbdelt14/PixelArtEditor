@@ -566,6 +566,36 @@
         border-radius: 10px 10px 0 0;
         border-bottom: 1px solid #3b4252;
       }
+      .gn-row {
+        position: absolute;
+        left: 12px;
+        right: 8px;
+        height: 24px;
+        line-height: 24px;
+        font-size: 12px;
+        color: #aab1bf;
+      }
+      .port.gray {
+        border-color: #d5d9e0;
+      }
+      .port.color {
+        border-color: #ff9a6a;
+      }
+      #goParams select {
+        font: inherit;
+        background: #1b1d22;
+        color: #e6e8ee;
+        border: 1px solid #3b4252;
+        border-radius: 6px;
+        padding: 4px 6px;
+      }
+      #goParams input[type="color"] {
+        width: 60px;
+        height: 28px;
+        padding: 0;
+        border: 0;
+        background: none;
+      }
       .gn-fila {
         position: absolute;
         left: 12px;
@@ -701,7 +731,7 @@
         <button id="animToggle" class="mini" title="Muestra u oculta los controles de frames y animación">🎞 Animación</button>
         <button id="tileToggle" class="mini" title="Repite el dibujo alrededor para diseñar mosaicos sin costuras">▦ Tile</button>
         <button id="themeBtn" class="mini" title="Cambia entre el modo crema (claro) y el gris oscuro">☀ Claro</button>
-        <button id="graphBtn" class="mini" title="Grafo de nodos para hacer patrones repetibles">🧩 Grafo</button>
+        <button id="graphBtn" class="mini" title="Node graph for seamless patterns">🧩 Graph</button>
         <span id="status"></span>
       </div>
       <div id="viewport"><canvas id="canvas"></canvas></div>
@@ -1065,10 +1095,10 @@
     </div>
     <div id="graphOverlay" hidden>
       <header class="go-top">
-        <strong>Grafo de patrones</strong>
-        <button id="goAdd">+ Nodo</button>
-        <button id="goApply">✓ Aplicar a la capa</button>
-        <button id="goClose">Cerrar</button>
+        <strong>Pattern graph</strong>
+        <button id="goAdd">+ Node</button>
+        <button id="goApply">✓ Apply to layer</button>
+        <button id="goClose">Close</button>
         <span id="goMsg"></span>
       </header>
       <div class="go-body">
@@ -1079,8 +1109,8 @@
           </div>
         </div>
         <aside class="go-side">
-          <button id="goTile" type="button" title="Cambia entre el tile solo y el tile repetido 3×3 (el original queda marcado en el centro)">▦ Ver 3×3</button>
-          <canvas id="goPrev" title="Vista previa: el original en el centro y repetido alrededor"></canvas>
+          <button id="goTile" type="button" title="Switch between the single tile and the 3×3 repeat (the original is marked in the center)">▦ 3×3</button>
+          <canvas id="goPrev" title="Preview: the original in the center, repeated around it"></canvas>
           <div id="goParams"></div>
         </aside>
       </div>
@@ -2019,56 +2049,155 @@
         updateExport();
         redraw();
       };
-      // ---------- grafo de nodos para patrones repetibles: todo son campos con período entero
-      const NODOS = {
-        ruido: { nombre: "Ruido", ent: [], sal: "campo", params: [["escala", "Escala", 2, 16, 4, 1], ["oct", "Detalle", 1, 4, 3, 1], ["sem", "Semilla", 0, 99999, 1, 1]] },
-        celdas: { nombre: "Celdas", ent: [], sal: "campo", params: [["escala", "Escala", 2, 16, 4, 1], ["sem", "Semilla", 0, 99999, 1, 1]] },
-        rayas: { nombre: "Rayas", ent: [], sal: "campo", params: [["cant", "Cantidad", 1, 16, 4, 1], ["grosor", "Grosor", 0.05, 0.95, 0.5, 0.05], ["dir", "Dirección: 0 horiz · 1 vert · 2 diagonal", 0, 2, 0, 1]] },
-        damero: { nombre: "Damero", ent: [], sal: "campo", params: [["n", "Cuadros por lado", 1, 16, 4, 1]] },
-        niveles: { nombre: "Niveles", ent: [["entrada", "campo"]], sal: "campo", params: [["bajo", "Negro desde", 0, 1, 0, 0.01], ["alto", "Blanco desde", 0, 1, 1, 0.01], ["gamma", "Gamma", 0.2, 3, 1, 0.05]] },
-        mezcla: { nombre: "Mezcla", ent: [["A", "campo"], ["B", "campo"]], sal: "campo", params: [["f", "Proporción de B", 0, 1, 0.5, 0.01]] },
-        desplazar: { nombre: "Desplazar", ent: [["entrada", "campo"]], sal: "campo", params: [["dx", "Horizontal", -64, 64, 0, 1], ["dy", "Vertical", -64, 64, 0, 1]] },
-        paleta: { nombre: "Paleta", ent: [["campo", "campo"]], sal: "color", params: [["niv", "Niveles de color", 2, 8, 4, 1]] },
-        salida: { nombre: "Salida (a la capa)", ent: [["color", "color"]], sal: null, params: [] },
+      // ---------- node graph v2: 16-bit linear grayscale fields → gradient → color → layer
+      const GRAPH_KEY = "pae-graph-v2";
+      const BLEND_MODES = [
+        ["normal", "Normal"],
+        ["multiply", "Multiply"],
+        ["divide", "Divide"],
+        ["screen", "Screen"],
+        ["overlay", "Overlay"],
+        ["add", "Add"],
+        ["subtract", "Subtract"],
+        ["min", "Min (darken)"],
+        ["max", "Max (lighten)"],
+        ["difference", "Difference"],
+        ["average", "Average"],
+      ];
+      const pNum = (k, label, min, max, def, step) => ({ k, label, t: "num", min, max, def, step });
+      const pSel = (k, label, opts, def) => ({ k, label, t: "select", opts, def });
+      const pCol = (k, label, def) => ({ k, label, t: "color", def });
+      const NODE_TYPES = {
+        noise: {
+          name: "Noise", inputs: [], output: "gray",
+          params: [
+            pSel("kind", "Type", [["perlin", "Perlin"], ["value", "Value"]], "perlin"),
+            pNum("scale", "Scale", 2, 16, 4, 1),
+            pNum("octaves", "Octaves", 1, 6, 4, 1),
+            pNum("persistence", "Persistence", 0.1, 1, 0.5, 0.05),
+            pNum("seed", "Seed", 0, 99999, 1, 1),
+          ],
+        },
+        cells: {
+          name: "Cells", inputs: [], output: "gray",
+          params: [pNum("scale", "Scale", 2, 16, 4, 1), pNum("seed", "Seed", 0, 99999, 1, 1)],
+        },
+        stripes: {
+          name: "Stripes", inputs: [], output: "gray",
+          params: [
+            pNum("count", "Count", 1, 16, 4, 1),
+            pNum("width", "Width", 0.05, 0.95, 0.5, 0.05),
+            pSel("direction", "Direction", [["horizontal", "Horizontal"], ["vertical", "Vertical"], ["diagonal", "Diagonal"]], "horizontal"),
+          ],
+        },
+        checker: {
+          name: "Checker", inputs: [], output: "gray",
+          params: [pNum("count", "Cells per side", 1, 16, 4, 1)],
+        },
+        blend: {
+          name: "Blend", inputs: [["A", "gray"], ["B", "gray"]], output: "gray",
+          params: [pSel("mode", "Blend mode", BLEND_MODES, "normal"), pNum("opacity", "Opacity", 0, 1, 1, 0.01)],
+        },
+        levels: {
+          name: "Levels", inputs: [["In", "gray"]], output: "gray",
+          params: [
+            pNum("black", "Black point", 0, 1, 0, 0.01),
+            pNum("white", "White point", 0, 1, 1, 0.01),
+            pNum("gamma", "Gamma", 0.2, 3, 1, 0.05),
+          ],
+        },
+        invert: { name: "Invert", inputs: [["In", "gray"]], output: "gray", params: [] },
+        transform: {
+          name: "Transform", inputs: [["In", "gray"]], output: "gray",
+          params: [
+            pNum("offsetX", "Offset X", -64, 64, 0, 1),
+            pNum("offsetY", "Offset Y", -64, 64, 0, 1),
+            pSel("rotate", "Rotate", [["0", "0°"], ["90", "90°"], ["180", "180°"], ["270", "270°"]], "0"),
+            pSel("flipX", "Flip X", [["no", "No"], ["yes", "Yes"]], "no"),
+            pSel("flipY", "Flip Y", [["no", "No"], ["yes", "Yes"]], "no"),
+          ],
+        },
+        tile: {
+          name: "Tile", inputs: [["In", "gray"]], output: "gray",
+          params: [pNum("countX", "Repeats X", 1, 8, 2, 1), pNum("countY", "Repeats Y", 1, 8, 2, 1)],
+        },
+        gradient: {
+          name: "Gradient", inputs: [["Gray", "gray"]], output: "color",
+          params: [
+            pNum("p1", "Stop 1 position", 0, 1, 0, 0.01), pCol("c1", "Stop 1 color", "#1a1a2e"),
+            pNum("p2", "Stop 2 position", 0, 1, 0.5, 0.01), pCol("c2", "Stop 2 color", "#e94560"),
+            pNum("p3", "Stop 3 position", 0, 1, 1, 0.01), pCol("c3", "Stop 3 color", "#ffe66d"),
+          ],
+        },
+        output: { name: "Output to layer", inputs: [["Color", "color"]], output: null, params: [] },
       };
-      const GRAFO_INICIAL = {
-        nodos: [
-          { id: "n1", tipo: "ruido", x: 30, y: 30, p: { escala: 4, oct: 3, sem: 1 } },
-          { id: "n2", tipo: "paleta", x: 240, y: 30, p: { niv: 4 } },
-          { id: "n3", tipo: "salida", x: 450, y: 30, p: {} },
+      const GRAPH_START = {
+        version: 2,
+        nodes: [
+          { id: "n1", type: "noise", x: 30, y: 30, p: { kind: "perlin", scale: 4, octaves: 4, persistence: 0.5, seed: 1 } },
+          { id: "n2", type: "gradient", x: 250, y: 30, p: {} },
+          { id: "n3", type: "output", x: 470, y: 30, p: {} },
         ],
-        cables: [
-          { de: "n1", a: "n2", i: 0 },
-          { de: "n2", a: "n3", i: 0 },
+        links: [
+          { from: "n1", to: "n2", input: 0 },
+          { from: "n2", to: "n3", input: 0 },
         ],
       };
-      const grafoCargar = () => {
+      const graphLoad = () => {
         try {
-          const g = JSON.parse(localStorage.getItem("pae-grafo") || "null");
-          if (g && Array.isArray(g.nodos) && Array.isArray(g.cables) && g.nodos.some((n) => n.tipo === "salida")) return g;
+          const g = JSON.parse(localStorage.getItem(GRAPH_KEY) || "null");
+          if (g && g.version === 2 && Array.isArray(g.nodes) && Array.isArray(g.links) && g.nodes.some((n) => n.type === "output")) return g;
         } catch (e) {}
-        return JSON.parse(JSON.stringify(GRAFO_INICIAL));
+        return JSON.parse(JSON.stringify(GRAPH_START));
       };
-      const grafoGuardar = () => {
+      const graphSave = () => {
         try {
-          localStorage.setItem("pae-grafo", JSON.stringify(grafo));
+          localStorage.setItem(GRAPH_KEY, JSON.stringify(graph));
         } catch (e) {}
       };
-      let grafo = grafoCargar();
+      let graph = graphLoad();
+      let graphNextId = 100;
 
-      // Campos: arreglos de W×H con valores entre 0 y 1
-      const campoEstirar = (t) => {
+      // 16 bits: cada valor de gris se redondea a 65 536 niveles lineales
+      const q16 = (v) => Math.round(Math.max(0, Math.min(1, v)) * 65535) / 65535;
+      const stretch01 = (t) => {
         let lo = Infinity,
           hi = -Infinity;
-        for (const v of t) {
-          if (v < lo) lo = v;
-          if (v > hi) hi = v;
+        for (let i = 0; i < t.length; i++) {
+          if (t[i] < lo) lo = t[i];
+          if (t[i] > hi) hi = t[i];
         }
         const r = hi - lo || 1;
-        for (let i = 0; i < t.length; i++) t[i] = (t[i] - lo) / r;
+        for (let i = 0; i < t.length; i++) t[i] = q16((t[i] - lo) / r);
         return t;
       };
-      const campoRuido = (escala, oct, s) => {
+      const gFade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+      const gGrad = (ix, iy, s) => {
+        const a = procHash(ix, iy, s) * Math.PI * 2;
+        return [Math.cos(a), Math.sin(a)];
+      };
+      // Perlin con período entero: se repite sin costuras
+      const gPerlin = (x, y, per, s) => {
+        const x0 = Math.floor(x),
+          y0 = Math.floor(y);
+        const fx = x - x0,
+          fy = y - y0;
+        const m = (n) => ((n % per) + per) % per;
+        const dot = (ix, iy, dx, dy) => {
+          const g = gGrad(m(ix), m(iy), s);
+          return g[0] * dx + g[1] * dy;
+        };
+        const u = gFade(fx),
+          v = gFade(fy);
+        const n00 = dot(x0, y0, fx, fy),
+          n10 = dot(x0 + 1, y0, fx - 1, fy),
+          n01 = dot(x0, y0 + 1, fx, fy - 1),
+          n11 = dot(x0 + 1, y0 + 1, fx - 1, fy - 1);
+        const a = n00 + (n10 - n00) * u,
+          b = n01 + (n11 - n01) * u;
+        return (a + (b - a) * v) * 0.7071 + 0.5;
+      };
+      const gNoise = (kind, scale, oct, pers, seed) => {
         const t = new Float32Array(W * H);
         for (let y = 0; y < H; y++)
           for (let x = 0; x < W; x++) {
@@ -2076,142 +2205,187 @@
               amp = 1,
               norm = 0;
             for (let o = 0; o < oct; o++) {
-              const per = escala << o;
-              v += amp * procRuido((x / W) * per, (y / H) * per, per, s + o * 131);
+              const per = scale << o;
+              const u = (x / W) * per,
+                w = (y / H) * per;
+              const s = seed + o * 131;
+              v += amp * (kind === "value" ? procRuido(u, w, per, s) : gPerlin(u, w, per, s));
               norm += amp;
-              amp *= 0.5;
+              amp *= pers;
             }
             t[y * W + x] = v / norm;
           }
-        return campoEstirar(t);
+        return stretch01(t);
       };
-      const campoCeldas = (escala, s) => {
+      const gCells = (scale, seed) => {
         const t = new Float32Array(W * H);
         for (let y = 0; y < H; y++)
-          for (let x = 0; x < W; x++) t[y * W + x] = procCeldas((x / W) * escala, (y / H) * escala, escala, s);
-        return campoEstirar(t);
+          for (let x = 0; x < W; x++) t[y * W + x] = procCeldas((x / W) * scale, (y / H) * scale, scale, seed);
+        return stretch01(t);
       };
-      const campoRayas = (cant, grosor, dir) => {
+      const gStripes = (count, width, dir) => {
         const t = new Float32Array(W * H);
         for (let y = 0; y < H; y++)
           for (let x = 0; x < W; x++) {
-            const u = dir === 0 ? (y / H) * cant : dir === 1 ? (x / W) * cant : (x / W + y / H) * cant;
-            t[y * W + x] = u - Math.floor(u) < grosor ? 1 : 0;
+            const u = dir === "horizontal" ? (y / H) * count : dir === "vertical" ? (x / W) * count : (x / W + y / H) * count;
+            t[y * W + x] = u - Math.floor(u) < width ? 1 : 0;
           }
         return t;
       };
-      const campoDamero = (n) => {
+      const gChecker = (count) => {
         const t = new Float32Array(W * H);
         for (let y = 0; y < H; y++)
-          for (let x = 0; x < W; x++) t[y * W + x] = (Math.floor((x / W) * n) + Math.floor((y / H) * n)) & 1;
+          for (let x = 0; x < W; x++) t[y * W + x] = (Math.floor((x / W) * count) + Math.floor((y / H) * count)) & 1;
         return t;
       };
-      const campoNiveles = (a, bajo, alto, gamma) => {
+      const blendPixel = (mode, a, b) => {
+        switch (mode) {
+          case "multiply": return a * b;
+          case "divide": return Math.min(1, a / Math.max(b, 1e-4));
+          case "screen": return 1 - (1 - a) * (1 - b);
+          case "overlay": return a < 0.5 ? 2 * a * b : 1 - 2 * (1 - a) * (1 - b);
+          case "add": return Math.min(1, a + b);
+          case "subtract": return Math.max(0, a - b);
+          case "min": return Math.min(a, b);
+          case "max": return Math.max(a, b);
+          case "difference": return Math.abs(a - b);
+          case "average": return (a + b) / 2;
+          default: return b;
+        }
+      };
+      const gBlend = (a, b, mode, opacity) => {
         const t = new Float32Array(W * H);
-        const r = Math.max(1e-6, alto - bajo);
-        for (let i = 0; i < t.length; i++) t[i] = Math.pow(Math.max(0, Math.min(1, (a[i] - bajo) / r)), gamma);
+        for (let i = 0; i < t.length; i++) {
+          const r = blendPixel(mode, a[i], b[i]);
+          t[i] = q16(a[i] * (1 - opacity) + r * opacity);
+        }
         return t;
       };
-      const campoMezcla = (a, b, f) => {
+      const gLevels = (a, black, white, gamma) => {
         const t = new Float32Array(W * H);
-        for (let i = 0; i < t.length; i++) t[i] = a[i] * (1 - f) + b[i] * f;
+        const r = Math.max(1e-4, white - black);
+        for (let i = 0; i < t.length; i++) t[i] = q16(Math.pow(Math.max(0, Math.min(1, (a[i] - black) / r)), gamma));
         return t;
       };
-      const campoDesplazar = (a, dx, dy) => {
+      const gTransform = (a, offX, offY, rot, flipX, flipY) => {
         const t = new Float32Array(W * H);
+        const turn = rot === "90" || rot === "270";
+        const usable = { rot: turn && W !== H ? "0" : rot };
         for (let y = 0; y < H; y++)
           for (let x = 0; x < W; x++) {
-            const sx = (((x + dx) % W) + W) % W,
-              sy = (((y + dy) % H) + H) % H;
+            let sx = x,
+              sy = y;
+            if (usable.rot === "90") [sx, sy] = [y, W - 1 - x];
+            else if (usable.rot === "180") [sx, sy] = [W - 1 - x, H - 1 - y];
+            else if (usable.rot === "270") [sx, sy] = [H - 1 - y, x];
+            if (flipX === "yes") sx = W - 1 - sx;
+            if (flipY === "yes") sy = H - 1 - sy;
+            sx = (((sx + offX) % W) + W) % W;
+            sy = (((sy + offY) % H) + H) % H;
             t[y * W + x] = a[sy * W + sx];
           }
         return t;
       };
-      // Campo → color: niveles entre el color A (el actual) y el color B (el de la textura procedural)
-      const campoPaleta = (a, niv) => {
-        const A = rgbOf(color),
-          B = rgbOf(document.getElementById("procB").value);
+      const gTile = (a, cx, cy) => {
+        const t = new Float32Array(W * H);
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) t[y * W + x] = a[((y * cy) % H) * W + ((x * cx) % W)];
+        return t;
+      };
+      const gGradient = (a, stops) => {
+        const st = stops.slice().sort((p, q) => p.p - q.p);
         const out = new Uint8ClampedArray(W * H * 3);
         for (let i = 0; i < W * H; i++) {
-          const k = Math.round(a[i] * (niv - 1)) / (niv - 1);
-          out[i * 3] = A.r + (B.r - A.r) * k;
-          out[i * 3 + 1] = A.g + (B.g - A.g) * k;
-          out[i * 3 + 2] = A.b + (B.b - A.b) * k;
+          const v = a[i];
+          let k = 0;
+          while (k < st.length - 2 && v > st[k + 1].p) k++;
+          const s0 = st[k],
+            s1 = st[k + 1];
+          const f = s1.p === s0.p ? 0 : Math.max(0, Math.min(1, (v - s0.p) / (s1.p - s0.p)));
+          for (let c = 0; c < 3; c++) out[i * 3 + c] = s0.c[c] + (s1.c[c] - s0.c[c]) * f;
         }
         return out;
       };
+      const hexRgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
-      const ejecutarNodo = (n, ins) => {
-        const p = n.p || {};
-        const num = (k, def) => (typeof p[k] === "number" && isFinite(p[k]) ? p[k] : def);
-        switch (n.tipo) {
-          case "ruido":
-            return campoRuido(num("escala", 4), num("oct", 3), num("sem", 1));
-          case "celdas":
-            return campoCeldas(num("escala", 4), num("sem", 1));
-          case "rayas":
-            return campoRayas(num("cant", 4), num("grosor", 0.5), num("dir", 0));
-          case "damero":
-            return campoDamero(num("n", 4));
-          case "niveles":
-            return ins[0] ? campoNiveles(ins[0], num("bajo", 0), num("alto", 1), num("gamma", 1)) : null;
-          case "mezcla":
-            return ins[0] && ins[1] ? campoMezcla(ins[0], ins[1], num("f", 0.5)) : null;
-          case "desplazar":
-            return ins[0] ? campoDesplazar(ins[0], Math.round(num("dx", 0)), Math.round(num("dy", 0))) : null;
-          case "paleta":
-            return ins[0] ? campoPaleta(ins[0], Math.max(2, Math.round(num("niv", 4)))) : null;
-          case "salida":
-            return ins[0] || null;
+      // Lee los parámetros de un nodo, con su valor por defecto
+      const graphParam = (n, def) => {
+        const v = n.p ? n.p[def.k] : undefined;
+        if (def.t === "num") return typeof v === "number" && isFinite(v) ? v : def.def;
+        if (def.t === "select") return def.opts.some(([val]) => val === v) ? v : def.def;
+        return typeof v === "string" ? v : def.def;
+      };
+      const graphRun = (n, ins) => {
+        const P = (k) => {
+          const def = NODE_TYPES[n.type].params.find((d) => d.k === k);
+          return graphParam(n, def);
+        };
+        switch (n.type) {
+          case "noise": return gNoise(P("kind"), Math.round(P("scale")), Math.round(P("octaves")), P("persistence"), Math.round(P("seed")));
+          case "cells": return gCells(Math.round(P("scale")), Math.round(P("seed")));
+          case "stripes": return gStripes(Math.round(P("count")), P("width"), P("direction"));
+          case "checker": return gChecker(Math.round(P("count")));
+          case "blend": return ins[0] && ins[1] ? gBlend(ins[0], ins[1], P("mode"), P("opacity")) : null;
+          case "levels": return ins[0] ? gLevels(ins[0], P("black"), P("white"), P("gamma")) : null;
+          case "invert": return ins[0] ? Float32Array.from(ins[0], (v) => 1 - v) : null;
+          case "transform": return ins[0] ? gTransform(ins[0], Math.round(P("offsetX")), Math.round(P("offsetY")), P("rotate"), P("flipX"), P("flipY")) : null;
+          case "tile": return ins[0] ? gTile(ins[0], Math.round(P("countX")), Math.round(P("countY"))) : null;
+          case "gradient": {
+            if (!ins[0]) return null;
+            const stops = [1, 2, 3].map((i) => ({ p: P("p" + i), c: hexRgb(P("c" + i)) }));
+            return gGradient(ins[0], stops);
+          }
+          case "output": return ins[0] || null;
         }
         return null;
       };
-      // Evalúa lo que llega a la Salida. Devuelve los píxeles de color o null (sin bucles).
-      const grafoEvaluar = () => {
+      // Evalúa lo que llega a la Salida. Devuelve los píxeles de color o null.
+      const graphEval = () => {
         const memo = new Map();
-        const porId = (id) => grafo.nodos.find((n) => n.id === id);
-        const calc = (id, pila) => {
+        const byId = (id) => graph.nodes.find((n) => n.id === id);
+        const calc = (id, stack) => {
           if (memo.has(id)) return memo.get(id);
-          if (pila.has(id)) return null;
-          const n = porId(id);
+          if (stack.has(id)) return null;
+          const n = byId(id);
           if (!n) return null;
-          pila.add(id);
-          const ins = NODOS[n.tipo].ent.map((_, i) => {
-            const c = grafo.cables.find((c) => c.a === id && c.i === i);
-            return c ? calc(c.de, pila) : null;
+          stack.add(id);
+          const ins = NODE_TYPES[n.type].inputs.map((_, i) => {
+            const l = graph.links.find((l) => l.to === id && l.input === i);
+            return l ? calc(l.from, stack) : null;
           });
-          pila.delete(id);
-          const out = ejecutarNodo(n, ins) || null;
+          stack.delete(id);
+          const out = graphRun(n, ins) || null;
           memo.set(id, out);
           return out;
         };
-        const sal = grafo.nodos.find((n) => n.tipo === "salida");
-        return sal ? calc(sal.id, new Set()) : null;
+        const end = graph.nodes.find((n) => n.type === "output");
+        return end ? calc(end.id, new Set()) : null;
       };
-      // ¿Se llega de «desde» a «hasta» siguiendo los cables (hacia la salida)?
-      const grafoAlcanza = (desde, hasta) => {
-        const vistos = new Set();
-        const pila = [desde];
-        while (pila.length) {
-          const id = pila.pop();
-          if (id === hasta) return true;
-          if (vistos.has(id)) continue;
-          vistos.add(id);
-          for (const c of grafo.cables) if (c.de === id) pila.push(c.a);
+      // ¿Se llega de «from» a «to» siguiendo los cables hacia adelante?
+      const graphReaches = (from, to) => {
+        const seen = new Set();
+        const stack = [from];
+        while (stack.length) {
+          const id = stack.pop();
+          if (id === to) return true;
+          if (seen.has(id)) continue;
+          seen.add(id);
+          for (const l of graph.links) if (l.from === id) stack.push(l.to);
         }
         return false;
       };
 
-      let goVerTile = true;
+      // ---------- interface
+      let graphTileView = true;
       const goMsg = (t) => (document.getElementById("goMsg").textContent = t);
-      const goPrevActualizar = () => {
+      const graphPreview = () => {
         const cv = document.getElementById("goPrev");
-        const n = goVerTile ? 3 : 1;
+        const n = graphTileView ? 3 : 1;
         cv.width = W * n;
         cv.height = H * n;
         const c2 = cv.getContext("2d");
         const img = c2.createImageData(W * n, H * n);
-        const col = grafoEvaluar();
+        const col = graphEval();
         for (let ty = 0; ty < n; ty++)
           for (let tx = 0; tx < n; tx++)
             for (let y = 0; y < H; y++)
@@ -2228,18 +2402,17 @@
                 img.data[d + 3] = 255;
               }
         c2.putImageData(img, 0, 0);
-        if (goVerTile) {
-          // marco en el original, el del centro
+        if (graphTileView) {
           c2.strokeStyle = "#ff3b3b";
           c2.lineWidth = 1;
           c2.strokeRect(W + 0.5, H + 0.5, W - 1, H - 1);
         }
-        goMsg(col ? "" : "Conectá una Paleta a la Salida.");
+        goMsg(col ? "" : "Connect a Gradient or a Color source to the Output.");
       };
-      const grafoAplicar = () => {
+      const graphApply = () => {
         if (layerLocked()) return;
-        const col = grafoEvaluar();
-        if (!col) return goMsg("Conectá una Paleta a la Salida.");
+        const col = graphEval();
+        if (!col) return goMsg("Connect a Gradient or a Color source to the Output.");
         snapGrid();
         for (let y = 0; y < H; y++)
           for (let x = 0; x < W; x++) {
@@ -2249,205 +2422,219 @@
           }
         updateExport();
         redraw();
-        goMsg("Aplicado a la capa actual. Deshacer lo revierte.");
+        goMsg("Applied to the current layer. Undo reverts it.");
       };
 
-      // ---------- interfaz del grafo
-      const NODO_W = 150,
-        CAB = 30,
-        FILA = 24;
-      let goSel = null;
-      let goMundo = { x: 0, y: 0 };
-      let goArr = null;
-      const goPorId = (id) => grafo.nodos.find((n) => n.id === id);
-      const goAlto = (n) => CAB + Math.max(1, NODOS[n.tipo].ent.length) * FILA + 10;
-      const goPuertoIn = (n, i) => ({ x: n.x, y: n.y + CAB + i * FILA + FILA / 2 });
-      const goPuertoOut = (n) => ({ x: n.x + NODO_W, y: n.y + CAB + FILA / 2 });
-      const goEntradaCerca = (desdeId, p) => {
-        const de = goPorId(desdeId);
-        if (!de) return null;
-        const tipo = NODOS[de.tipo].sal;
-        let mejor = null,
+      const NODE_W = 160,
+        HEAD = 30,
+        ROW = 24;
+      let graphSelected = null;
+      let graphView = { x: 0, y: 0 };
+      let graphDrag = null;
+      const graphNodeById = (id) => graph.nodes.find((n) => n.id === id);
+      const graphHeight = (n) => HEAD + Math.max(1, NODE_TYPES[n.type].inputs.length) * ROW + 10;
+      const graphInPort = (n, i) => ({ x: n.x, y: n.y + HEAD + i * ROW + ROW / 2 });
+      const graphOutPort = (n) => ({ x: n.x + NODE_W, y: n.y + HEAD + ROW / 2 });
+      const graphFindInput = (fromId, p) => {
+        const src = graphNodeById(fromId);
+        if (!src) return null;
+        const type = NODE_TYPES[src.type].output;
+        let best = null,
           dist = 28;
-        for (const n of grafo.nodos) {
-          if (n.id === desdeId) continue;
-          NODOS[n.tipo].ent.forEach(([, t], i) => {
-            if (t !== tipo) return;
-            const q = goPuertoIn(n, i);
+        for (const n of graph.nodes) {
+          if (n.id === fromId) continue;
+          NODE_TYPES[n.type].inputs.forEach(([, t], i) => {
+            if (t !== type) return;
+            const q = graphInPort(n, i);
             const d = Math.hypot(q.x - p.x, q.y - p.y);
             if (d <= dist) {
               dist = d;
-              mejor = { id: n.id, i };
+              best = { id: n.id, i };
             }
           });
         }
-        return mejor;
+        return best;
       };
-      const goConectar = (desde, a, i) => {
-        if (goAlcanza(a, desde)) return goMsg("Eso crearía un bucle: no se puede.");
-        grafo.cables = grafo.cables.filter((c) => !(c.a === a && c.i === i));
-        grafo.cables.push({ de: desde, a, i });
+      const graphConnect = (from, to, input) => {
+        if (graphReaches(to, from)) return goMsg("That would make a loop. Not allowed.");
+        graph.links = graph.links.filter((l) => !(l.to === to && l.input === input));
+        graph.links.push({ from, to, input });
         goMsg("");
       };
-      const goAlcanza = (desde, hasta) => grafoAlcanza(desde, hasta);
-      const goCambio = () => {
-        goPintar();
-        grafoGuardar();
-        goPrevActualizar();
+      const graphChanged = () => {
+        graphRender();
+        graphSave();
+        graphPreview();
       };
-      const goPintar = () => {
-        const mundoEl = document.getElementById("goWorld");
-        mundoEl.style.transform = `translate(${goMundo.x}px, ${goMundo.y}px)`;
+      const graphRender = () => {
+        document.getElementById("goWorld").style.transform = `translate(${graphView.x}px, ${graphView.y}px)`;
         const svg = document.getElementById("goWires");
-        let trazos = "";
-        const trazo = (p, q, extra) =>
+        let paths = "";
+        const wire = (p, q, extra) =>
           `<path d="M ${p.x} ${p.y} C ${p.x + 60} ${p.y}, ${q.x - 60} ${q.y}, ${q.x} ${q.y}"${extra || ""}/>`;
-        for (const c of grafo.cables) {
-          const de = goPorId(c.de),
-            a = goPorId(c.a);
-          if (de && a) trazos += trazo(goPuertoOut(de), goPuertoIn(a, c.i));
+        for (const l of graph.links) {
+          const a = graphNodeById(l.from),
+            b = graphNodeById(l.to);
+          if (a && b) paths += wire(graphOutPort(a), graphInPort(b, l.input));
         }
-        if (goArr && goArr.tipo === "cable" && goArr.moved) {
-          const de = goPorId(goArr.de);
-          const destino = goArr.cand ? goPuertoIn(goPorId(goArr.cand.id), goArr.cand.i) : { x: goArr.px, y: goArr.py };
-          if (de) trazos += trazo(goPuertoOut(de), destino, ' class="temp"');
+        if (graphDrag && graphDrag.kind === "wire" && graphDrag.moved) {
+          const a = graphNodeById(graphDrag.from);
+          const to = graphDrag.hit ? graphInPort(graphNodeById(graphDrag.hit.id), graphDrag.hit.i) : { x: graphDrag.px, y: graphDrag.py };
+          if (a) paths += wire(graphOutPort(a), to, ' class="temp"');
         }
-        svg.innerHTML = trazos;
-        const nodos = grafo.nodos.map((n) => {
-          const def = NODOS[n.tipo];
+        svg.innerHTML = paths;
+        const els = graph.nodes.map((n) => {
+          const def = NODE_TYPES[n.type];
           const el = document.createElement("div");
-          el.className = "gn" + (goSel === n.id ? " sel" : "");
+          el.className = "gn" + (graphSelected === n.id ? " sel" : "");
           el.dataset.id = n.id;
-          Object.assign(el.style, {
-            left: n.x + "px",
-            top: n.y + "px",
-            width: NODO_W + "px",
-            height: goAlto(n) + "px",
+          Object.assign(el.style, { left: n.x + "px", top: n.y + "px", width: NODE_W + "px", height: graphHeight(n) + "px" });
+          const title = document.createElement("div");
+          title.className = "gn-tit";
+          title.textContent = def.name;
+          el.append(title);
+          def.inputs.forEach(([label, type], i) => {
+            const row = document.createElement("div");
+            row.className = "gn-row";
+            row.style.top = HEAD + i * ROW + "px";
+            row.textContent = label;
+            const port = document.createElement("span");
+            port.className = `port in ${type}`;
+            port.dataset.kind = "in";
+            port.dataset.i = i;
+            port.style.left = "-7px";
+            port.style.top = HEAD + i * ROW + ROW / 2 - 7 + "px";
+            if (graphDrag && graphDrag.hit && graphDrag.hit.id === n.id && graphDrag.hit.i === i) port.classList.add("cand");
+            el.append(row, port);
           });
-          const tit = document.createElement("div");
-          tit.className = "gn-tit";
-          tit.textContent = def.nombre;
-          el.append(tit);
-          def.ent.forEach(([lab], i) => {
-            const f = document.createElement("div");
-            f.className = "gn-fila";
-            f.style.top = CAB + i * FILA + "px";
-            f.textContent = lab;
-            const pt = document.createElement("span");
-            pt.className = "port in";
-            pt.dataset.kind = "in";
-            pt.dataset.i = i;
-            pt.style.left = "-7px";
-            pt.style.top = CAB + i * FILA + FILA / 2 - 7 + "px";
-            if (goArr && goArr.cand && goArr.cand.id === n.id && goArr.cand.i === i) pt.classList.add("cand");
-            el.append(f, pt);
-          });
-          if (def.sal) {
-            const pt = document.createElement("span");
-            pt.className = "port out";
-            pt.dataset.kind = "out";
-            pt.style.right = "-7px";
-            pt.style.top = CAB + FILA / 2 - 7 + "px";
-            el.append(pt);
+          if (def.output) {
+            const port = document.createElement("span");
+            port.className = `port out ${def.output}`;
+            port.dataset.kind = "out";
+            port.style.right = "-7px";
+            port.style.top = HEAD + ROW / 2 - 7 + "px";
+            el.append(port);
           }
           return el;
         });
-        document.getElementById("goNodes").replaceChildren(...nodos);
+        document.getElementById("goNodes").replaceChildren(...els);
       };
-      const goParams = () => {
+      const graphParamsPanel = () => {
         const box = document.getElementById("goParams");
         box.replaceChildren();
-        const n = goPorId(goSel);
+        const n = graphNodeById(graphSelected);
         if (!n) {
           const t = document.createElement("p");
           t.className = "go-ayuda";
           t.textContent =
-            "Arrastrá desde la salida (círculo derecho) hasta una entrada (círculo izquierdo) para conectar. Tocá una entrada para desconectarla. Tocá un nodo para cambiar sus valores.";
+            "Drag from an output (right circle) to an input (left circle) to connect. Tap an input to disconnect it. Tap a node to edit its values.";
           box.append(t);
           return;
         }
-        const titulo = document.createElement("strong");
-        titulo.textContent = NODOS[n.tipo].nombre;
-        box.append(titulo);
-        for (const [k, lab, min, max, def0, step] of NODOS[n.tipo].params) {
-          const val = typeof n.p[k] === "number" ? n.p[k] : def0;
-          const fila = document.createElement("label");
-          fila.textContent = lab;
-          const rango = document.createElement("input");
-          rango.type = "range";
-          rango.min = min;
-          rango.max = max;
-          rango.step = step;
-          rango.value = val;
-          const num = document.createElement("input");
-          num.type = "number";
-          num.min = min;
-          num.max = max;
-          num.step = step;
-          num.value = val;
-          const cambia = (v) => {
-            const x = parseFloat(v);
-            if (!isFinite(x)) return;
-            n.p[k] = x;
-            rango.value = x;
-            num.value = x;
-            goPrevActualizar();
-            grafoGuardar();
+        const title = document.createElement("strong");
+        title.textContent = NODE_TYPES[n.type].name;
+        box.append(title);
+        for (const def of NODE_TYPES[n.type].params) {
+          const val = graphParam(n, def);
+          const row = document.createElement("label");
+          row.textContent = def.label;
+          const apply = (v) => {
+            n.p = n.p || {};
+            n.p[def.k] = v;
+            graphChanged();
           };
-          rango.addEventListener("input", () => cambia(rango.value));
-          num.addEventListener("change", () => cambia(num.value));
-          fila.append(rango, num);
-          box.append(fila);
+          if (def.t === "select") {
+            const sel = document.createElement("select");
+            for (const [v, t] of def.opts) {
+              const o = document.createElement("option");
+              o.value = v;
+              o.textContent = t;
+              sel.append(o);
+            }
+            sel.value = val;
+            sel.addEventListener("change", () => apply(sel.value));
+            row.append(sel);
+          } else if (def.t === "color") {
+            const inp = document.createElement("input");
+            inp.type = "color";
+            inp.value = val;
+            inp.addEventListener("input", () => apply(inp.value));
+            row.append(inp);
+          } else {
+            const range = document.createElement("input");
+            range.type = "range";
+            range.min = def.min;
+            range.max = def.max;
+            range.step = def.step;
+            range.value = val;
+            const num = document.createElement("input");
+            num.type = "number";
+            num.min = def.min;
+            num.max = def.max;
+            num.step = def.step;
+            num.value = val;
+            const set = (raw) => {
+              const x = parseFloat(raw);
+              if (!isFinite(x)) return;
+              range.value = x;
+              num.value = x;
+              apply(x);
+            };
+            range.addEventListener("input", () => set(range.value));
+            num.addEventListener("change", () => set(num.value));
+            row.append(range, num);
+          }
+          box.append(row);
         }
-        if (n.tipo !== "salida") {
-          const quitar = document.createElement("button");
-          quitar.textContent = "Quitar nodo";
-          quitar.addEventListener("click", () => {
-            grafo.nodos = grafo.nodos.filter((x) => x.id !== n.id);
-            grafo.cables = grafo.cables.filter((c) => c.de !== n.id && c.a !== n.id);
-            goSel = null;
-            goPintar();
-            goParams();
-            goCambio();
+        if (n.type !== "output") {
+          const del = document.createElement("button");
+          del.textContent = "Delete node";
+          del.addEventListener("click", () => {
+            graph.nodes = graph.nodes.filter((x) => x.id !== n.id);
+            graph.links = graph.links.filter((l) => l.from !== n.id && l.to !== n.id);
+            graphSelected = null;
+            graphRender();
+            graphParamsPanel();
+            graphChanged();
           });
-          box.append(quitar);
+          box.append(del);
         }
       };
-      const goMundoPos = (e) => {
+      const graphWorldPos = (e) => {
         const r = document.getElementById("goView").getBoundingClientRect();
-        return { x: e.clientX - r.left - goMundo.x, y: e.clientY - r.top - goMundo.y };
+        return { x: e.clientX - r.left - graphView.x, y: e.clientY - r.top - graphView.y };
       };
-      const goAbrir = (abrir) => {
-        document.getElementById("graphOverlay").hidden = !abrir;
-        if (abrir) {
-          goPintar();
-          goParams();
-          goPrevActualizar();
+      const graphOpen = (open) => {
+        document.getElementById("graphOverlay").hidden = !open;
+        if (open) {
+          graphRender();
+          graphParamsPanel();
+          graphPreview();
         } else {
-          grafoGuardar();
+          graphSave();
         }
       };
-      const goNuevo = (tipo) => {
+      const graphAddNode = (type) => {
         const p = {};
-        for (const [k, , , , def0] of NODOS[tipo].params) p[k] = def0;
-        const id = "n" + Date.now().toString(36) + Math.floor(Math.random() * 1000);
-        const cx = -goMundo.x + 140 + Math.random() * 60,
-          cy = -goMundo.y + 120 + Math.random() * 60;
-        grafo.nodos.push({ id, tipo, x: Math.round(cx), y: Math.round(cy), p });
-        goSel = id;
+        for (const def of NODE_TYPES[type].params) p[def.k] = def.def;
+        const id = "n" + graphNextId++;
+        const x = Math.round(-graphView.x + 140 + Math.random() * 60);
+        const y = Math.round(-graphView.y + 120 + Math.random() * 60);
+        graph.nodes.push({ id, type, x, y, p });
+        graphSelected = id;
         document.getElementById("goMenu").hidden = true;
-        goPintar();
-        goParams();
-        goCambio();
+        graphRender();
+        graphParamsPanel();
+        graphChanged();
       };
-      const goMenuArmar = () => {
+      const graphMenuBuild = () => {
         const menu = document.getElementById("goMenu");
         menu.replaceChildren();
-        for (const [tipo, def] of Object.entries(NODOS)) {
-          if (tipo === "salida" && grafo.nodos.some((n) => n.tipo === "salida")) continue;
+        for (const [type, def] of Object.entries(NODE_TYPES)) {
+          if (type === "output" && graph.nodes.some((n) => n.type === "output")) continue;
           const b = document.createElement("button");
-          b.textContent = def.nombre;
-          b.addEventListener("click", () => goNuevo(tipo));
+          b.textContent = def.name;
+          b.addEventListener("click", () => graphAddNode(type));
           menu.append(b);
         }
       };
@@ -2457,98 +2644,104 @@
         const port = e.target.closest(".port");
         if (port) {
           const id = port.closest(".gn").dataset.id;
-          goArr = { tipo: port.dataset.kind === "out" ? "cable" : "in", de: id, a: id, i: +port.dataset.i, pid: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false };
+          graphDrag = {
+            kind: port.dataset.kind === "out" ? "wire" : "input",
+            from: id,
+            to: id,
+            input: +port.dataset.i,
+            pid: e.pointerId,
+            sx: e.clientX,
+            sy: e.clientY,
+            moved: false,
+          };
           goView.setPointerCapture(e.pointerId);
           e.preventDefault();
           return;
         }
-        const nodo = e.target.closest(".gn");
-        if (nodo) {
-          const n = goPorId(nodo.dataset.id);
-          const p = goMundoPos(e);
-          goArr = { tipo: "nodo", id: n.id, dx: p.x - n.x, dy: p.y - n.y, pid: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false };
+        const node = e.target.closest(".gn");
+        if (node) {
+          const n = graphNodeById(node.dataset.id);
+          const p = graphWorldPos(e);
+          graphDrag = { kind: "node", id: n.id, dx: p.x - n.x, dy: p.y - n.y, pid: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false };
           goView.setPointerCapture(e.pointerId);
           return;
         }
-        goArr = { tipo: "pan", pid: e.pointerId, sx: e.clientX, sy: e.clientY, mx: goMundo.x, my: goMundo.y, moved: false };
+        graphDrag = { kind: "pan", pid: e.pointerId, sx: e.clientX, sy: e.clientY, mx: graphView.x, my: graphView.y, moved: false };
         goView.setPointerCapture(e.pointerId);
       });
       goView.addEventListener("pointermove", (e) => {
-        const a = goArr;
-        if (!a || e.pointerId !== a.pid) return;
-        const dx = e.clientX - a.sx,
-          dy = e.clientY - a.sy;
-        if (!a.moved && Math.hypot(dx, dy) > 5) a.moved = true;
-        if (a.tipo === "pan") {
-          goMundo = { x: a.mx + dx, y: a.my + dy };
-          document.getElementById("goWorld").style.transform = `translate(${goMundo.x}px, ${goMundo.y}px)`;
-        } else if (a.tipo === "nodo" && a.moved) {
-          const n = goPorId(a.id);
-          const p = goMundoPos(e);
-          n.x = Math.round(p.x - a.dx);
-          n.y = Math.round(p.y - a.dy);
-          goPintar();
-        } else if (a.tipo === "cable" && a.moved) {
-          const p = goMundoPos(e);
-          a.px = p.x;
-          a.py = p.y;
-          a.cand = goEntradaCerca(a.de, p);
-          goPintar();
+        const d = graphDrag;
+        if (!d || e.pointerId !== d.pid) return;
+        const dx = e.clientX - d.sx,
+          dy = e.clientY - d.sy;
+        if (!d.moved && Math.hypot(dx, dy) > 5) d.moved = true;
+        if (d.kind === "pan") {
+          graphView = { x: d.mx + dx, y: d.my + dy };
+          document.getElementById("goWorld").style.transform = `translate(${graphView.x}px, ${graphView.y}px)`;
+        } else if (d.kind === "node" && d.moved) {
+          const n = graphNodeById(d.id);
+          const p = graphWorldPos(e);
+          n.x = Math.round(p.x - d.dx);
+          n.y = Math.round(p.y - d.dy);
+          graphRender();
+        } else if (d.kind === "wire" && d.moved) {
+          const p = graphWorldPos(e);
+          d.px = p.x;
+          d.py = p.y;
+          d.hit = graphFindInput(d.from, p);
+          graphRender();
         }
       });
-      const goSoltar = (e) => {
-        const a = goArr;
-        if (!a || e.pointerId !== a.pid) return;
-        goArr = null;
-        if (a.tipo === "pan") {
-          if (!a.moved) goSel = null;
-          goPintar();
-          goParams();
-        } else if (a.tipo === "nodo") {
-          if (!a.moved) goSel = a.id;
-          goPintar();
-          goParams();
-          if (a.moved) goCambio();
-        } else if (a.tipo === "cable") {
-          if (a.moved) {
-            const p = goMundoPos(e);
-            const dest = goEntradaCerca(a.de, p);
-            if (dest) goConectar(a.de, dest.id, dest.i);
-            goCambio();
+      const graphRelease = (e) => {
+        const d = graphDrag;
+        if (!d || e.pointerId !== d.pid) return;
+        graphDrag = null;
+        if (d.kind === "pan") {
+          if (!d.moved) graphSelected = null;
+          graphRender();
+          graphParamsPanel();
+        } else if (d.kind === "node") {
+          if (!d.moved) graphSelected = d.id;
+          graphRender();
+          graphParamsPanel();
+          if (d.moved) graphChanged();
+        } else if (d.kind === "wire") {
+          if (d.moved) {
+            const dest = graphFindInput(d.from, graphWorldPos(e));
+            if (dest) graphConnect(d.from, dest.id, dest.i);
           }
-        } else if (a.tipo === "in" && !a.moved) {
-          // tocar una entrada la desconecta
-          grafo.cables = grafo.cables.filter((c) => !(c.a === a.a && c.i === a.i));
-          goCambio();
+          graphChanged();
+        } else if (d.kind === "input" && !d.moved) {
+          graph.links = graph.links.filter((l) => !(l.to === d.from && l.input === d.input));
+          graphChanged();
         }
       };
-      goView.addEventListener("pointerup", goSoltar);
-      goView.addEventListener("pointercancel", () => (goArr = null));
+      goView.addEventListener("pointerup", graphRelease);
+      goView.addEventListener("pointercancel", () => (graphDrag = null));
 
-      document.getElementById("graphBtn").addEventListener("click", () => goAbrir(true));
-      document.getElementById("goClose").addEventListener("click", () => goAbrir(false));
-      document.getElementById("goApply").addEventListener("click", grafoAplicar);
-      // Ver 3×3 (en el panel) o Ver 1 tile (a pantalla completa). Tocar la imagen a pantalla completa vuelve al 3×3.
-      const goModoTile = (v) => {
-        goVerTile = v;
-        document.getElementById("goTile").textContent = goVerTile ? "▦ Ver 3×3" : "▢ Ver 1 tile";
-        document.getElementById("goPrev").classList.toggle("go-full", !goVerTile);
-        goPrevActualizar();
-      };
-      document.getElementById("goTile").addEventListener("click", () => goModoTile(!goVerTile));
-      document.getElementById("goPrev").addEventListener("click", () => {
-        if (!goVerTile) goModoTile(true);
-      });
+      document.getElementById("graphBtn").addEventListener("click", () => graphOpen(true));
+      document.getElementById("goClose").addEventListener("click", () => graphOpen(false));
+      document.getElementById("goApply").addEventListener("click", graphApply);
       document.getElementById("goAdd").addEventListener("click", () => {
-        goMenuArmar();
+        graphMenuBuild();
         document.getElementById("goMenu").hidden = !document.getElementById("goMenu").hidden;
+      });
+      // Tile view: 3×3 in the panel, or 1 tile. Tapping the image also switches back to 3×3.
+      const graphSetTileView = (v) => {
+        graphTileView = v;
+        document.getElementById("goTile").textContent = graphTileView ? "▦ 3×3" : "▢ 1 tile";
+        document.getElementById("goPrev").classList.toggle("go-full", !graphTileView);
+        graphPreview();
+      };
+      document.getElementById("goTile").addEventListener("click", () => graphSetTileView(!graphTileView));
+      document.getElementById("goPrev").addEventListener("click", () => {
+        if (!graphTileView) graphSetTileView(true);
       });
       document.addEventListener("keydown", (e) => {
         if (e.key !== "Escape" || document.getElementById("graphOverlay").hidden) return;
-        if (!goVerTile) goModoTile(true);
-        else goAbrir(false);
+        if (!graphTileView) graphSetTileView(true);
+        else graphOpen(false);
       });
-
       document.getElementById("procGen").addEventListener("click", generarProc);
       document.getElementById("procSeedBtn").addEventListener("click", () => {
         document.getElementById("procSeed").value = 1 + Math.floor(Math.random() * 99998);
