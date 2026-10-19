@@ -2095,7 +2095,7 @@
           params: [pNum("count", "Cells per side", 1, 16, 4, 1)],
         },
         blend: {
-          name: "Blend", inputs: [["A", "gray"], ["B", "gray"]], output: "gray",
+          name: "Blend", inputs: [["A", "gray"], ["B", "gray"], ["Mask (optional)", "gray"]], output: "gray",
           params: [pSel("mode", "Blend mode", BLEND_MODES, "normal"), pNum("opacity", "Opacity", 0, 1, 1, 0.01)],
         },
         levels: {
@@ -2253,13 +2253,24 @@
           default: return b;
         }
       };
-      const gBlend = (a, b, mode, opacity) => {
+      // La máscara (si está conectada) dice cuánto de B entra en cada píxel: 0 = nada, 1 = todo
+      const gBlend = (a, b, mode, opacity, mask) => {
         const t = new Float32Array(W * H);
         for (let i = 0; i < t.length; i++) {
+          const m = opacity * (mask ? mask[i] : 1);
           const r = blendPixel(mode, a[i], b[i]);
-          t[i] = q16(a[i] * (1 - opacity) + r * opacity);
+          t[i] = q16(a[i] * (1 - m) + r * m);
         }
         return t;
+      };
+      // Para mostrar un campo en gris (16 bits → 8 bits)
+      const grayToRgb = (a) => {
+        const out = new Uint8ClampedArray(W * H * 3);
+        for (let i = 0; i < W * H; i++) {
+          const v = Math.round(a[i] * 255);
+          out[i * 3] = out[i * 3 + 1] = out[i * 3 + 2] = v;
+        }
+        return out;
       };
       const gLevels = (a, black, white, gamma) => {
         const t = new Float32Array(W * H);
@@ -2325,7 +2336,7 @@
           case "cells": return gCells(Math.round(P("scale")), Math.round(P("seed")));
           case "stripes": return gStripes(Math.round(P("count")), P("width"), P("direction"));
           case "checker": return gChecker(Math.round(P("count")));
-          case "blend": return ins[0] && ins[1] ? gBlend(ins[0], ins[1], P("mode"), P("opacity")) : null;
+          case "blend": return ins[0] && ins[1] ? gBlend(ins[0], ins[1], P("mode"), P("opacity"), ins[2]) : null;
           case "levels": return ins[0] ? gLevels(ins[0], P("black"), P("white"), P("gamma")) : null;
           case "invert": return ins[0] ? Float32Array.from(ins[0], (v) => 1 - v) : null;
           case "transform": return ins[0] ? gTransform(ins[0], Math.round(P("offsetX")), Math.round(P("offsetY")), P("rotate"), P("flipX"), P("flipY")) : null;
@@ -2340,7 +2351,7 @@
         return null;
       };
       // Evalúa lo que llega a la Salida. Devuelve los píxeles de color o null.
-      const graphEval = () => {
+      const graphEval = (targetId) => {
         const memo = new Map();
         const byId = (id) => graph.nodes.find((n) => n.id === id);
         const calc = (id, stack) => {
@@ -2359,7 +2370,8 @@
           return out;
         };
         const end = graph.nodes.find((n) => n.type === "output");
-        return end ? calc(end.id, new Set()) : null;
+        const id = targetId || (end && end.id);
+        return id ? calc(id, new Set()) : null;
       };
       // ¿Se llega de «from» a «to» siguiendo los cables hacia adelante?
       const graphReaches = (from, to) => {
@@ -2377,6 +2389,8 @@
 
       // ---------- interface
       let graphTileView = true;
+      let graphPreviewId = null;
+      let graphLastTap = null;
       const goMsg = (t) => (document.getElementById("goMsg").textContent = t);
       const graphPreview = () => {
         const cv = document.getElementById("goPrev");
@@ -2385,7 +2399,9 @@
         cv.height = H * n;
         const c2 = cv.getContext("2d");
         const img = c2.createImageData(W * n, H * n);
-        const col = graphEval();
+        const target = graphPreviewId && graphNodeById(graphPreviewId) ? graphPreviewId : null;
+        const res = graphEval(target);
+        const col = res instanceof Float32Array ? grayToRgb(res) : res;
         for (let ty = 0; ty < n; ty++)
           for (let tx = 0; tx < n; tx++)
             for (let y = 0; y < H; y++)
@@ -2407,7 +2423,9 @@
           c2.lineWidth = 1;
           c2.strokeRect(W + 0.5, H + 0.5, W - 1, H - 1);
         }
-        goMsg(col ? "" : "Connect a Gradient or a Color source to the Output.");
+        if (target)
+          goMsg(`Showing: ${NODE_TYPES[graphNodeById(target).type].name}${res instanceof Float32Array ? " (grayscale)" : ""}. Tap the empty area to go back.`);
+        else goMsg(col ? "" : "Connect a Gradient or a Color source to the Output.");
       };
       const graphApply = () => {
         if (layerLocked()) return;
@@ -2697,14 +2715,25 @@
         if (!d || e.pointerId !== d.pid) return;
         graphDrag = null;
         if (d.kind === "pan") {
-          if (!d.moved) graphSelected = null;
+          if (!d.moved && (graphSelected || graphPreviewId)) {
+            graphSelected = null;
+            graphPreviewId = null;
+            graphPreview();
+          }
           graphRender();
           graphParamsPanel();
         } else if (d.kind === "node") {
-          if (!d.moved) graphSelected = d.id;
+          if (!d.moved) {
+            const ahora = Date.now();
+            const doble = graphLastTap && graphLastTap.id === d.id && ahora - graphLastTap.t < 400;
+            graphLastTap = doble ? null : { id: d.id, t: ahora };
+            if (doble) graphPreviewId = d.id;
+            graphSelected = d.id;
+          }
           graphRender();
           graphParamsPanel();
           if (d.moved) graphChanged();
+          else graphPreview();
         } else if (d.kind === "wire") {
           if (d.moved) {
             const dest = graphFindInput(d.from, graphWorldPos(e));
