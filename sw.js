@@ -1,4 +1,4 @@
-const CACHE = 'pixelart-v2';
+const CACHE = 'pixelart-v3';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -23,12 +23,14 @@ const save = (req, res) => {
 };
 
 // La página se pide primero a la red (así llegan las actualizaciones) y, sin internet, sale de la caché.
+// «no-cache» hace que el navegador pregunte siempre al servidor si hay una versión nueva, en vez de usar
+// la copia que GitHub Pages deja guardar 10 minutos.
 // El resto (íconos, manifest) sale de la caché directamente.
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   if (e.request.mode === 'navigate') {
     e.respondWith(
-      fetch(e.request)
+      fetch(e.request.url, { cache: 'no-cache' })
         .then((res) => save(e.request, res))
         .catch(() => caches.match(e.request).then((r) => r || caches.match('./index.html')))
     );
