@@ -589,6 +589,9 @@
       .port.color {
         border-color: #ff9a6a;
       }
+      .port.any {
+        border-color: #b9a4ff;
+      }
       #goParams select {
         font: inherit;
         background: #1b1d22;
@@ -2267,7 +2270,7 @@
           params: [pNum("count", "Cells per side", 1, 16, 4, 1)],
         },
         blend: {
-          name: "Blend", inputs: [["A", "gray"], ["B", "gray"], ["Mask (optional)", "gray"]], output: "gray",
+          name: "Blend", inputs: [["A", "any"], ["B", "any"], ["Mask (optional)", "gray"]], output: "any",
           params: [pSel("mode", "Blend mode", BLEND_MODES, "normal"), pNum("opacity", "Opacity", 0, 1, 1, 0.01)],
         },
         levels: {
@@ -2361,6 +2364,61 @@
         while (graph.nodes.some((n) => n.id === id));
         return id;
       };
+      // Tipo que sale de un nodo. Si es «any» (Blend), el de lo que tenga conectado en sus entradas «any»;
+      // null si todavía no tiene nada (acepta cualquier cosa hasta que se conecte algo).
+      const graphOutType = (id, seen = new Set()) => {
+        const n = graph.nodes.find((x) => x.id === id);
+        if (!n || !NODE_TYPES[n.type]) return null;
+        const def = NODE_TYPES[n.type];
+        if (def.output !== "any") return def.output;
+        if (seen.has(id)) return null;
+        seen.add(id);
+        for (let i = 0; i < def.inputs.length; i++) {
+          if (def.inputs[i][1] !== "any") continue;
+          const l = graph.links.find((l) => l.to === id && l.input === i);
+          if (!l) continue;
+          const t = graphOutType(l.from, seen);
+          if (t) return t;
+        }
+        return null;
+      };
+      // ¿La entrada i del nodo acepta ese tipo? Las «any» aceptan gris o color, pero igual al de las otras
+      // entradas «any» del mismo nodo que ya estén conectadas. Un tipo desconocido (null) se acepta.
+      const graphAccepts = (n, i, type) => {
+        const ins = NODE_TYPES[n.type].inputs;
+        const t = ins[i] && ins[i][1];
+        if (!t) return false;
+        if (type == null) return true;
+        if (t !== "any") return t === type;
+        if (type !== "gray" && type !== "color") return false;
+        for (let j = 0; j < ins.length; j++) {
+          if (j === i || ins[j][1] !== "any") continue;
+          const l = graph.links.find((l) => l.to === n.id && l.input === j);
+          if (!l) continue;
+          const tj = graphOutType(l.from);
+          if (tj && tj !== type) return false;
+        }
+        return true;
+      };
+      // Quita los cables que dejaron de encajar (por ejemplo, un Blend que pasó de gris a color)
+      const graphPruneTypes = () => {
+        let quitados = 0,
+          cambio = true;
+        while (cambio) {
+          cambio = false;
+          for (const l of graph.links) {
+            const b = graph.nodes.find((n) => n.id === l.to);
+            if (!b) continue;
+            const t = graphOutType(l.from);
+            if (t == null || graphAccepts(b, l.input, t)) continue;
+            graph.links = graph.links.filter((x) => x !== l);
+            quitados++;
+            cambio = true;
+            break;
+          }
+        }
+        return quitados;
+      };
       // Repara grafos guardados: ids repetidos, cables a nodos o entradas que no existen, tipos que no
       // coinciden y dos cables en la misma entrada (queda el último).
       const graphSanitize = () => {
@@ -2380,7 +2438,9 @@
           const sirve = (nodo, l) => {
             const ins = NODE_TYPES[nodo.type].inputs;
             const src = find(l.from);
-            return l.input >= 0 && l.input < ins.length && (!src || NODE_TYPES[src.type].output === ins[l.input][1]);
+            if (!(l.input >= 0 && l.input < ins.length)) return false;
+            const so = src ? NODE_TYPES[src.type].output : null;
+            return !so || so === "any" || ins[l.input][1] === "any" || so === ins[l.input][1];
           };
           for (const l of graph.links) if (l.to === viejo && sirve(n, l) && !sirve(primero, l)) l.to = n.id;
         }
@@ -2392,13 +2452,13 @@
           if (!a || !b || a === b) continue;
           const ins = NODE_TYPES[b.type].inputs;
           if (!(l.input >= 0 && l.input < ins.length)) continue;
-          if (NODE_TYPES[a.type].output !== ins[l.input][1]) continue;
           const k = l.to + ":" + l.input;
           if (usados.has(k)) continue;
           usados.add(k);
           buenos.push(l);
         }
         graph.links = buenos.reverse();
+        graphPruneTypes();
       };
       graphSanitize();
       graphSave();
@@ -2664,6 +2724,20 @@
         }
         return t;
       };
+      // Lo mismo para color: cada canal se mezcla con el mismo modo y la misma máscara
+      const gBlendColor = (a, b, mode, opacity, mask) => {
+        const out = new Uint8ClampedArray(W * H * 3);
+        for (let i = 0; i < W * H; i++) {
+          const m = opacity * (mask ? mask[i] : 1);
+          for (let c = 0; c < 3; c++) {
+            const av = a[i * 3 + c] / 255,
+              bv = b[i * 3 + c] / 255;
+            const r = blendPixel(mode, av, bv);
+            out[i * 3 + c] = Math.round((av * (1 - m) + r * m) * 255);
+          }
+        }
+        return out;
+      };
       // Para mostrar un campo en gris (16 bits → 8 bits)
       const grayToRgb = (a) => {
         const out = new Uint8ClampedArray(W * H * 3);
@@ -2843,7 +2917,14 @@
           case "cells": return gCells(Math.round(P("scale")), Math.round(P("seed")));
           case "stripes": return gStripes(Math.round(P("count")), P("width"), P("direction"));
           case "checker": return gChecker(Math.round(P("count")));
-          case "blend": return ins[0] && ins[1] ? gBlend(ins[0], ins[1], P("mode"), P("opacity"), ins[2]) : null;
+          case "blend": {
+            const [a, b, mk] = ins;
+            if (!a || !b) return null;
+            const mask = mk instanceof Float32Array ? mk : null;
+            if (a instanceof Float32Array && b instanceof Float32Array) return gBlend(a, b, P("mode"), P("opacity"), mask);
+            if (!(a instanceof Float32Array) && !(b instanceof Float32Array)) return gBlendColor(a, b, P("mode"), P("opacity"), mask);
+            return null;
+          }
           case "levels": return ins[0] ? gLevels(ins[0], P("black"), P("white"), P("gamma"), P("outBlack"), P("outWhite")) : null;
           case "polygon": return gPolygon(P("shape"), P("size"), P("centerX"), P("centerY"), P("rotation"));
           case "invert": return ins[0] ? Float32Array.from(ins[0], (v) => 1 - v) : null;
@@ -2974,13 +3055,13 @@
       const graphFindInput = (fromId, p) => {
         const src = graphNodeById(fromId);
         if (!src) return null;
-        const type = NODE_TYPES[src.type].output;
+        const type = graphOutType(fromId);
         let best = null,
           dist = 28;
         for (const n of graph.nodes) {
           if (n.id === fromId) continue;
           NODE_TYPES[n.type].inputs.forEach(([, t], i) => {
-            if (t !== type) return;
+            if (!graphAccepts(n, i, type)) return;
             const q = graphInPort(n, i);
             const d = Math.hypot(q.x - p.x, q.y - p.y);
             if (d <= dist) {
@@ -2993,9 +3074,17 @@
       };
       const graphConnect = (from, to, input) => {
         if (graphReaches(to, from)) return goMsg("That would make a loop. Not allowed.");
+        const dest = graph.nodes.find((n) => n.id === to);
+        // la conexión que se reemplaza no cuenta para el chequeo de tipos
+        const previa = graph.links.filter((l) => l.to === to && l.input === input);
         graph.links = graph.links.filter((l) => !(l.to === to && l.input === input));
+        if (dest && !graphAccepts(dest, input, graphOutType(from))) {
+          graph.links.push(...previa);
+          return goMsg("Types don't match: A and B must both be gray or both be color. The mask is always gray.");
+        }
         graph.links.push({ from, to, input });
-        goMsg("");
+        const q = graphPruneTypes();
+        goMsg(q ? `Removed ${q} connection${q > 1 ? "s" : ""} that no longer matched the type.` : "");
       };
       const graphChanged = () => {
         graphRender();
@@ -3050,7 +3139,7 @@
           });
           if (def.output) {
             const port = document.createElement("span");
-            port.className = `port out ${def.output}`;
+            port.className = `port out ${def.output === "any" ? graphOutType(n.id) || "any" : def.output}`;
             port.dataset.kind = "out";
             port.style.right = "-7px";
             port.style.top = HEAD + ROW / 2 - 7 + "px";
@@ -3203,7 +3292,9 @@
       const graphDropMenu = (fromId, world, screen) => {
         const src = graphNodeById(fromId);
         if (!src) return;
-        const type = NODE_TYPES[src.type].output;
+        const type = graphOutType(fromId);
+        // primera entrada de un nodo nuevo (sin cables) que acepta ese tipo
+        const entradaPara = (d) => d.inputs.findIndex(([, t]) => t === "any" || type == null || t === type);
         goDrop.replaceChildren();
         const titulo = (t) => {
           const d = document.createElement("div");
@@ -3224,13 +3315,13 @@
           goDrop.append(b);
         };
         const nuevos = Object.entries(NODE_TYPES).filter(
-          ([tp, d]) => d.inputs.some(([, t]) => t === type) && !(tp === "output" && graph.nodes.some((n) => n.type === "output")),
+          ([tp, d]) => entradaPara(d) >= 0 && !(tp === "output" && graph.nodes.some((n) => n.type === "output")),
         );
         if (nuevos.length) {
           titulo("New node");
           nuevos.forEach(([tp, d]) =>
             opcion(d.name, () => {
-              const i = d.inputs.findIndex(([, t]) => t === type);
+              const i = entradaPara(d);
               // se ubica para que su entrada quede donde se soltó el cable
               const id = graphAddNodeAt(tp, world.x, world.y - (HEAD + i * ROW + ROW / 2));
               graphConnect(fromId, id, i);
