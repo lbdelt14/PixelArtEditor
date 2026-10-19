@@ -676,6 +676,46 @@
         color: #aab1bf;
         line-height: 1.5;
       }
+      #goDrop {
+        position: fixed;
+        z-index: 92;
+        min-width: 210px;
+        max-height: 60vh;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px;
+        background: #262a33;
+        border: 1px solid #3b4252;
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      }
+      #goDrop[hidden] {
+        display: none;
+      }
+      #goDrop button {
+        font: inherit;
+        font-size: 13px;
+        width: 100%;
+        text-align: left;
+        padding: 6px 10px;
+        background: #2a2f3a;
+        color: #e6e8ee;
+        border: 1px solid #3b4252;
+        border-radius: 6px;
+        box-shadow: none;
+      }
+      #goDrop button:hover {
+        background: #34507a;
+      }
+      .go-drop-tit {
+        font-size: 11px;
+        color: #8d95a5;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin: 4px 2px 0;
+      }
       #goMenu {
         position: fixed;
         left: 12px;
@@ -2811,6 +2851,114 @@
         }
       };
 
+      // Crear un nodo en una posición dada (en coordenadas del grafo); devuelve su id
+      const graphAddNodeAt = (type, x, y) => {
+        const p = {};
+        for (const def of NODE_TYPES[type].params) p[def.k] = def.def;
+        const id = "n" + graphNextId++;
+        graph.nodes.push({ id, type, x: Math.round(x), y: Math.round(y), p });
+        graphSelected = id;
+        return id;
+      };
+      // Soltar un cable en el vacío: menú con los nodos nuevos que aceptan esa salida
+      const goDrop = document.createElement("div");
+      goDrop.id = "goDrop";
+      goDrop.hidden = true;
+      document.getElementById("graphOverlay").append(goDrop);
+      const graphDropMenu = (fromId, world, screen) => {
+        const src = graphNodeById(fromId);
+        if (!src) return;
+        const type = NODE_TYPES[src.type].output;
+        goDrop.replaceChildren();
+        const titulo = (t) => {
+          const d = document.createElement("div");
+          d.className = "go-drop-tit";
+          d.textContent = t;
+          goDrop.append(d);
+        };
+        const opcion = (label, fn) => {
+          const b = document.createElement("button");
+          b.textContent = label;
+          b.addEventListener("click", () => {
+            goDrop.hidden = true;
+            fn();
+            graphRender();
+            graphParamsPanel();
+            graphChanged();
+          });
+          goDrop.append(b);
+        };
+        const nuevos = Object.entries(NODE_TYPES).filter(
+          ([tp, d]) => d.inputs.some(([, t]) => t === type) && !(tp === "output" && graph.nodes.some((n) => n.type === "output")),
+        );
+        if (nuevos.length) {
+          titulo("New node");
+          nuevos.forEach(([tp, d]) =>
+            opcion(d.name, () => {
+              const i = d.inputs.findIndex(([, t]) => t === type);
+              // se ubica para que su entrada quede donde se soltó el cable
+              const id = graphAddNodeAt(tp, world.x, world.y - (HEAD + i * ROW + ROW / 2));
+              graphConnect(fromId, id, i);
+            }),
+          );
+        }
+        if (!goDrop.children.length) return;
+        goDrop.hidden = false;
+        const w = goDrop.offsetWidth,
+          hh = goDrop.offsetHeight;
+        goDrop.style.left = Math.max(8, Math.min(innerWidth - w - 8, screen.x)) + "px";
+        goDrop.style.top = Math.max(8, Math.min(innerHeight - hh - 8, screen.y)) + "px";
+      };
+      document.addEventListener("pointerdown", (e) => {
+        if (!goDrop.hidden && !goDrop.contains(e.target)) goDrop.hidden = true;
+      });
+      document.addEventListener(
+        "keydown",
+        (e) => {
+          if (e.key === "Escape" && !goDrop.hidden) {
+            goDrop.hidden = true;
+            e.stopImmediatePropagation();
+          }
+        },
+        true,
+      );
+      let graphClipboard = null;
+      let graphPasteCount = 0;
+      window.addEventListener(
+        "keydown",
+        (e) => {
+          if (document.getElementById("graphOverlay").hidden) return;
+          if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+          if (e.target.closest && e.target.closest("input, select, textarea")) return;
+          const k = e.key.toLowerCase();
+          if (k === "c") {
+            const n = graphNodeById(graphSelected);
+            if (!n || n.type === "output") {
+              goMsg(n ? "The Output node can't be copied." : "Select a node to copy it.");
+            } else {
+              graphClipboard = JSON.parse(JSON.stringify(n));
+              graphPasteCount = 0;
+              goMsg("Copied: " + NODE_TYPES[n.type].name + ". Ctrl+V to paste.");
+            }
+            e.preventDefault();
+            e.stopImmediatePropagation();
+          } else if (k === "v") {
+            if (graphClipboard) {
+              graphPasteCount++;
+              const c = graphClipboard;
+              const id = graphAddNodeAt(c.type, c.x + 30 * graphPasteCount, c.y + 30 * graphPasteCount);
+              graphNodeById(id).p = JSON.parse(JSON.stringify(c.p || {}));
+              graphRender();
+              graphParamsPanel();
+              graphChanged();
+              goMsg("Pasted: " + NODE_TYPES[c.type].name + ".");
+            }
+            e.preventDefault();
+            e.stopImmediatePropagation();
+          }
+        },
+        true,
+      );
       const goView = document.getElementById("goView");
       goView.addEventListener("pointerdown", (e) => {
         const port = e.target.closest(".port");
@@ -2890,8 +3038,10 @@
           else graphPreview();
         } else if (d.kind === "wire") {
           if (d.moved) {
-            const dest = graphFindInput(d.from, graphWorldPos(e));
+            const p = graphWorldPos(e);
+            const dest = graphFindInput(d.from, p);
             if (dest) graphConnect(d.from, dest.id, dest.i);
+            else graphDropMenu(d.from, p, { x: e.clientX, y: e.clientY });
           }
           graphChanged();
         } else if (d.kind === "input" && !d.moved) {
