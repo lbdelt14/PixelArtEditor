@@ -676,6 +676,16 @@
         color: #aab1bf;
         line-height: 1.5;
       }
+      #goBox {
+        position: absolute;
+        z-index: 3;
+        border: 1px dashed #6aa9ff;
+        background: rgba(106, 169, 255, 0.12);
+        pointer-events: none;
+      }
+      #goBox[hidden] {
+        display: none;
+      }
       #goDrop {
         position: fixed;
         z-index: 92;
@@ -2679,6 +2689,11 @@
         graphPreview();
       };
       const graphRender = () => {
+        for (const id of [...graphSel]) if (!graphNodeById(id)) graphSel.delete(id);
+        if (graphSelected && !graphSel.has(graphSelected)) {
+          graphSel.clear();
+          graphSel.add(graphSelected);
+        }
         document.getElementById("goWorld").style.transform = `translate(${graphView.x}px, ${graphView.y}px)`;
         const svg = document.getElementById("goWires");
         let paths = "";
@@ -2698,7 +2713,7 @@
         const els = graph.nodes.map((n) => {
           const def = NODE_TYPES[n.type];
           const el = document.createElement("div");
-          el.className = "gn" + (graphSelected === n.id ? " sel" : "");
+          el.className = "gn" + (graphSel.has(n.id) ? " sel" : "");
           el.dataset.id = n.id;
           Object.assign(el.style, { left: n.x + "px", top: n.y + "px", width: NODE_W + "px", height: graphHeight(n) + "px" });
           const title = document.createElement("div");
@@ -2739,7 +2754,9 @@
           const t = document.createElement("p");
           t.className = "go-ayuda";
           t.textContent =
-            "Drag from an output (right circle) to an input (left circle) to connect. Tap an input to disconnect it. Tap a node to edit its values.";
+            graphSel.size > 1
+              ? `${graphSel.size} nodes selected. Drag one of them to move them together. Ctrl+C / Ctrl+V duplicates them.`
+              : "Drag from an output (right circle) to an input (left circle) to connect. Click an input to disconnect it. Click a node to edit its values. Drag on empty space to select several nodes (Shift adds). Middle or right button, or Space + drag, moves the view.";
           box.append(t);
           return;
         }
@@ -2922,6 +2939,34 @@
         },
         true,
       );
+      // Selección: graphSel tiene todos los nodos elegidos; graphSelected es el que muestra sus valores
+      // (sólo cuando hay uno solo elegido).
+      const graphSel = new Set();
+      const graphSelectOnly = (ids) => {
+        graphSel.clear();
+        for (const id of ids) graphSel.add(id);
+        graphSelected = graphSel.size === 1 ? [...graphSel][0] : null;
+      };
+      const goView = document.getElementById("goView");
+      const goBox = document.createElement("div");
+      goBox.id = "goBox";
+      goBox.hidden = true;
+      goView.append(goBox);
+      goView.addEventListener("contextmenu", (e) => e.preventDefault());
+      // Espacio apretado + arrastre = mover la vista
+      let graphSpace = false;
+      window.addEventListener("keydown", (e) => {
+        if (e.code !== "Space" || document.getElementById("graphOverlay").hidden) return;
+        if (e.target.closest && e.target.closest("input, select, textarea, button")) return;
+        graphSpace = true;
+        e.preventDefault();
+      });
+      window.addEventListener("keyup", (e) => {
+        if (e.code === "Space") graphSpace = false;
+      });
+
+      // Ctrl+C / Ctrl+V (o Cmd): copia los nodos elegidos con sus valores y los cables entre ellos.
+      // Con el grafo abierto se atiende antes que el copiar y pegar del dibujo, salvo si se escribe en un campo.
       let graphClipboard = null;
       let graphPasteCount = 0;
       window.addEventListener(
@@ -2932,26 +2977,37 @@
           if (e.target.closest && e.target.closest("input, select, textarea")) return;
           const k = e.key.toLowerCase();
           if (k === "c") {
-            const n = graphNodeById(graphSelected);
-            if (!n || n.type === "output") {
-              goMsg(n ? "The Output node can't be copied." : "Select a node to copy it.");
+            const ids = [...graphSel].filter((id) => {
+              const n = graphNodeById(id);
+              return n && n.type !== "output";
+            });
+            if (!ids.length) {
+              goMsg(graphSel.size ? "The Output node can't be copied." : "Select nodes to copy them.");
             } else {
-              graphClipboard = JSON.parse(JSON.stringify(n));
+              graphClipboard = {
+                nodes: ids.map((id) => JSON.parse(JSON.stringify(graphNodeById(id)))),
+                links: graph.links.filter((l) => ids.includes(l.from) && ids.includes(l.to)).map((l) => ({ ...l })),
+              };
               graphPasteCount = 0;
-              goMsg("Copied: " + NODE_TYPES[n.type].name + ". Ctrl+V to paste.");
+              goMsg(`Copied ${ids.length} node${ids.length > 1 ? "s" : ""}. Ctrl+V to paste.`);
             }
             e.preventDefault();
             e.stopImmediatePropagation();
           } else if (k === "v") {
             if (graphClipboard) {
               graphPasteCount++;
-              const c = graphClipboard;
-              const id = graphAddNodeAt(c.type, c.x + 30 * graphPasteCount, c.y + 30 * graphPasteCount);
-              graphNodeById(id).p = JSON.parse(JSON.stringify(c.p || {}));
+              const mapa = new Map();
+              for (const c of graphClipboard.nodes) {
+                const id = graphAddNodeAt(c.type, c.x + 30 * graphPasteCount, c.y + 30 * graphPasteCount);
+                graphNodeById(id).p = JSON.parse(JSON.stringify(c.p || {}));
+                mapa.set(c.id, id);
+              }
+              for (const l of graphClipboard.links) graph.links.push({ from: mapa.get(l.from), to: mapa.get(l.to), input: l.input });
+              graphSelectOnly(mapa.values());
               graphRender();
               graphParamsPanel();
               graphChanged();
-              goMsg("Pasted: " + NODE_TYPES[c.type].name + ".");
+              goMsg(`Pasted ${mapa.size} node${mapa.size > 1 ? "s" : ""}.`);
             }
             e.preventDefault();
             e.stopImmediatePropagation();
@@ -2959,10 +3015,10 @@
         },
         true,
       );
-      const goView = document.getElementById("goView");
+
       goView.addEventListener("pointerdown", (e) => {
         const port = e.target.closest(".port");
-        if (port) {
+        if (port && e.button === 0) {
           const id = port.closest(".gn").dataset.id;
           graphDrag = {
             kind: port.dataset.kind === "out" ? "wire" : "input",
@@ -2979,14 +3035,33 @@
           return;
         }
         const node = e.target.closest(".gn");
-        if (node) {
-          const n = graphNodeById(node.dataset.id);
-          const p = graphWorldPos(e);
-          graphDrag = { kind: "node", id: n.id, dx: p.x - n.x, dy: p.y - n.y, pid: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false };
+        if (node && e.button === 0 && !graphSpace) {
+          const id = node.dataset.id;
+          const adding = e.shiftKey || e.ctrlKey || e.metaKey;
+          const wasSelected = graphSel.has(id);
+          if (!wasSelected) {
+            if (adding) {
+              graphSel.add(id);
+              graphSelected = graphSel.size === 1 ? id : null;
+            } else graphSelectOnly([id]);
+            graphRender();
+            graphParamsPanel();
+          }
+          // posiciones de partida de todos los elegidos: se mueven juntos
+          const starts = new Map([...graphSel].map((i) => [i, { x: graphNodeById(i).x, y: graphNodeById(i).y }]));
+          graphDrag = { kind: "node", id, adding, wasSelected, starts, p0: graphWorldPos(e), pid: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false };
           goView.setPointerCapture(e.pointerId);
           return;
         }
-        graphDrag = { kind: "pan", pid: e.pointerId, sx: e.clientX, sy: e.clientY, mx: graphView.x, my: graphView.y, moved: false };
+        if (e.button === 1 || e.button === 2 || graphSpace) {
+          graphDrag = { kind: "pan", pid: e.pointerId, sx: e.clientX, sy: e.clientY, mx: graphView.x, my: graphView.y, moved: false };
+          goView.setPointerCapture(e.pointerId);
+          e.preventDefault();
+          return;
+        }
+        if (e.button !== 0) return;
+        // recuadro de selección
+        graphDrag = { kind: "box", pid: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false, adding: e.shiftKey || e.ctrlKey || e.metaKey };
         goView.setPointerCapture(e.pointerId);
       });
       goView.addEventListener("pointermove", (e) => {
@@ -2999,10 +3074,15 @@
           graphView = { x: d.mx + dx, y: d.my + dy };
           document.getElementById("goWorld").style.transform = `translate(${graphView.x}px, ${graphView.y}px)`;
         } else if (d.kind === "node" && d.moved) {
-          const n = graphNodeById(d.id);
           const p = graphWorldPos(e);
-          n.x = Math.round(p.x - d.dx);
-          n.y = Math.round(p.y - d.dy);
+          const mx = p.x - d.p0.x,
+            my = p.y - d.p0.y;
+          for (const [id, s] of d.starts) {
+            const n = graphNodeById(id);
+            if (!n) continue;
+            n.x = Math.round(s.x + mx);
+            n.y = Math.round(s.y + my);
+          }
           graphRender();
         } else if (d.kind === "wire" && d.moved) {
           const p = graphWorldPos(e);
@@ -3010,27 +3090,51 @@
           d.py = p.y;
           d.hit = graphFindInput(d.from, p);
           graphRender();
+        } else if (d.kind === "box" && d.moved) {
+          const r = goView.getBoundingClientRect();
+          goBox.hidden = false;
+          goBox.style.left = Math.min(d.sx, e.clientX) - r.left + "px";
+          goBox.style.top = Math.min(d.sy, e.clientY) - r.top + "px";
+          goBox.style.width = Math.abs(dx) + "px";
+          goBox.style.height = Math.abs(dy) + "px";
         }
       });
       const graphRelease = (e) => {
         const d = graphDrag;
         if (!d || e.pointerId !== d.pid) return;
         graphDrag = null;
-        if (d.kind === "pan") {
-          if (!d.moved && (graphSelected || graphPreviewId)) {
-            graphSelected = null;
-            graphPreviewId = null;
-            graphPreview();
+        if (d.kind === "box") {
+          goBox.hidden = true;
+          if (!d.moved) {
+            // clic en el vacío: nada elegido y la vista previa vuelve a la salida
+            if (graphSel.size || graphPreviewId) {
+              graphSelectOnly([]);
+              graphPreviewId = null;
+              graphPreview();
+            }
+          } else {
+            const r = goView.getBoundingClientRect();
+            const a = { x: Math.min(d.sx, e.clientX) - r.left - graphView.x, y: Math.min(d.sy, e.clientY) - r.top - graphView.y };
+            const b = { x: Math.max(d.sx, e.clientX) - r.left - graphView.x, y: Math.max(d.sy, e.clientY) - r.top - graphView.y };
+            const dentro = graph.nodes
+              .filter((n) => n.x < b.x && n.x + NODE_W > a.x && n.y < b.y && n.y + graphHeight(n) > a.y)
+              .map((n) => n.id);
+            graphSelectOnly(d.adding ? [...graphSel, ...dentro] : dentro);
           }
           graphRender();
           graphParamsPanel();
+        } else if (d.kind === "pan") {
+          // sólo mueve la vista
         } else if (d.kind === "node") {
           if (!d.moved) {
             const ahora = Date.now();
             const doble = graphLastTap && graphLastTap.id === d.id && ahora - graphLastTap.t < 400;
             graphLastTap = doble ? null : { id: d.id, t: ahora };
             if (doble) graphPreviewId = d.id;
-            graphSelected = d.id;
+            if (d.adding && d.wasSelected) {
+              graphSel.delete(d.id);
+              graphSelected = graphSel.size === 1 ? [...graphSel][0] : null;
+            } else if (!d.adding) graphSelectOnly([d.id]);
           }
           graphRender();
           graphParamsPanel();
@@ -3056,12 +3160,15 @@
         const n = graph.nodes.find((n) => p.x >= n.x && p.x <= n.x + NODE_W && p.y >= n.y && p.y <= n.y + graphHeight(n));
         if (!n) return;
         graphPreviewId = n.id;
-        graphSelected = n.id;
+        graphSelectOnly([n.id]);
         graphRender();
         graphParamsPanel();
         graphPreview();
       });
-      goView.addEventListener("pointercancel", () => (graphDrag = null));
+      goView.addEventListener("pointercancel", () => {
+        graphDrag = null;
+        goBox.hidden = true;
+      });
 
       document.getElementById("graphBtn").addEventListener("click", () => graphOpen(true));
       document.getElementById("goClose").addEventListener("click", () => graphOpen(false));
