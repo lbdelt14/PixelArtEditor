@@ -2528,17 +2528,25 @@
       document.getElementById("graphBtn").addEventListener("click", () => goAbrir(true));
       document.getElementById("goClose").addEventListener("click", () => goAbrir(false));
       document.getElementById("goApply").addEventListener("click", grafoAplicar);
-      document.getElementById("goTile").addEventListener("click", () => {
-        goVerTile = !goVerTile;
+      // Ver 3×3 (en el panel) o Ver 1 tile (a pantalla completa). Tocar la imagen a pantalla completa vuelve al 3×3.
+      const goModoTile = (v) => {
+        goVerTile = v;
         document.getElementById("goTile").textContent = goVerTile ? "▦ Ver 3×3" : "▢ Ver 1 tile";
+        document.getElementById("goPrev").classList.toggle("go-full", !goVerTile);
         goPrevActualizar();
+      };
+      document.getElementById("goTile").addEventListener("click", () => goModoTile(!goVerTile));
+      document.getElementById("goPrev").addEventListener("click", () => {
+        if (!goVerTile) goModoTile(true);
       });
       document.getElementById("goAdd").addEventListener("click", () => {
         goMenuArmar();
         document.getElementById("goMenu").hidden = !document.getElementById("goMenu").hidden;
       });
       document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && !document.getElementById("graphOverlay").hidden) goAbrir(false);
+        if (e.key !== "Escape" || document.getElementById("graphOverlay").hidden) return;
+        if (!goVerTile) goModoTile(true);
+        else goAbrir(false);
       });
 
       document.getElementById("procGen").addEventListener("click", generarProc);
