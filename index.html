@@ -499,6 +499,14 @@
         border-radius: 8px;
         box-shadow: none;
       }
+      #goClear {
+        background: #3a2328;
+        border-color: #7a3b44;
+      }
+      #goClear.armed {
+        background: #8a2f3a;
+        border-color: #e05a68;
+      }
       #goMsg {
         font-size: 12px;
         color: #aab1bf;
@@ -1098,6 +1106,7 @@
         <strong>Pattern graph</strong>
         <button id="goAdd">+ Node</button>
         <button id="goApply">✓ Apply to layer</button>
+        <button id="goClear" title="Delete all nodes and connections (asks twice)">Clear</button>
         <button id="goClose">Close</button>
         <span id="goMsg"></span>
       </header>
@@ -2907,6 +2916,35 @@
       document.getElementById("graphBtn").addEventListener("click", () => graphOpen(true));
       document.getElementById("goClose").addEventListener("click", () => graphOpen(false));
       document.getElementById("goApply").addEventListener("click", graphApply);
+      let graphClearArmed = 0;
+      const goClearBtn = document.getElementById("goClear");
+      const graphClearReset = () => {
+        graphClearArmed = 0;
+        goClearBtn.textContent = "Clear";
+        goClearBtn.classList.remove("armed");
+      };
+      goClearBtn.addEventListener("click", () => {
+        if (Date.now() > graphClearArmed) {
+          graphClearArmed = Date.now() + 4000;
+          goClearBtn.textContent = "Clear? Click again";
+          goClearBtn.classList.add("armed");
+          setTimeout(() => {
+            if (graphClearArmed && Date.now() > graphClearArmed) graphClearReset();
+          }, 4100);
+          return;
+        }
+        graphClearReset();
+        if (!window.confirm("Delete all nodes and connections? This can't be undone.")) return;
+        const out = graph.nodes.find((n) => n.type === "output") || { id: "n" + graphNextId++, type: "output", x: 470, y: 30, p: {} };
+        graph.nodes = [out];
+        graph.links = [];
+        graphSelected = null;
+        graphPreviewId = null;
+        graphRender();
+        graphParamsPanel();
+        graphChanged();
+        goMsg("Graph cleared.");
+      });
       document.getElementById("goAdd").addEventListener("click", () => {
         graphMenuBuild();
         document.getElementById("goMenu").hidden = !document.getElementById("goMenu").hidden;
