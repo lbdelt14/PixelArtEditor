@@ -2243,6 +2243,7 @@
         ["moisture", "Moisture"],
         ["caustic", "Caustic"],
       ];
+      const GRADIENT_PALETTES = Object.keys(PALETTES).filter((n) => n !== "Mi paleta");
       const FRACTAL = ["perlin", "value", "turbulence", "ridged", "marble", "wood", "moisture"];
       const NODE_TYPES = {
         noise: {
@@ -2269,8 +2270,9 @@
             pNum("seed", "Seed", 0, 99999, 1, 1),
           ],
         },
+        // oculto en los menús: lo reemplaza Noise → Voronoi; sigue andando en grafos guardados
         cells: {
-          name: "Cells", inputs: [], output: "gray",
+          name: "Cells", inputs: [], output: "gray", hidden: true,
           params: [pNum("scale", "Scale", 2, 16, 4, 1), pNum("seed", "Seed", 0, 99999, 1, 1)],
         },
         stripes: {
@@ -2351,11 +2353,16 @@
         gradient: {
           name: "Gradient", inputs: [["Gray", "gray"]], output: "color",
           params: [
-            pNum("p1", "Stop 1 position", 0, 1, 0, 0.01), pCol("c1", "Stop 1 color", "#1a1a2e"),
-            pSel("m1", "Stop 1 → 2", [["smooth", "Smooth (gradient)"], ["step", "Step (hard edge)"]], "smooth"),
-            pNum("p2", "Stop 2 position", 0, 1, 0.5, 0.01), pCol("c2", "Stop 2 color", "#e94560"),
-            pSel("m2", "Stop 2 → 3", [["smooth", "Smooth (gradient)"], ["step", "Step (hard edge)"]], "smooth"),
-            pNum("p3", "Stop 3 position", 0, 1, 1, 0.01), pCol("c3", "Stop 3 color", "#ffe66d"),
+            pSel("kind", "Preset", [["custom", "Custom (3 stops)"], ...GRADIENT_PALETTES.map((n) => ["pal:" + n, n])], "custom"),
+            only(GRADIENT_PALETTES.map((n) => "pal:" + n), pSel("palMode", "Interpolation", [["step", "Step (hard edge)"], ["smooth", "Smooth (gradient)"]], "step")),
+            only(["custom"], pNum("p1", "Stop 1 position", 0, 1, 0, 0.01)),
+            only(["custom"], pCol("c1", "Stop 1 color", "#000000")),
+            only(["custom"], pSel("m1", "Stop 1 → 2", [["smooth", "Smooth (gradient)"], ["step", "Step (hard edge)"]], "smooth")),
+            only(["custom"], pNum("p2", "Stop 2 position", 0, 1, 0.5, 0.01)),
+            only(["custom"], pCol("c2", "Stop 2 color", "#808080")),
+            only(["custom"], pSel("m2", "Stop 2 → 3", [["smooth", "Smooth (gradient)"], ["step", "Step (hard edge)"]], "smooth")),
+            only(["custom"], pNum("p3", "Stop 3 position", 0, 1, 1, 0.01)),
+            only(["custom"], pCol("c3", "Stop 3 color", "#ffffff")),
           ],
         },
         output: { name: "Output to layer", inputs: [["Color", "color"]], output: null, params: [] },
@@ -2372,8 +2379,9 @@
       const graphCatOf = (type) => GRAPH_CATS.find(([, , ts]) => ts.includes(type)) || ["Other", "#8d95a5", [type]];
       // tipos agrupados por categoría (lo que no esté en ninguna va al final, en «Other»)
       const graphTypesByCat = (filtro) => {
-        const grupos = GRAPH_CATS.map(([nombre, color, ts]) => [nombre, color, ts.filter((t) => NODE_TYPES[t] && filtro(t))]);
-        const sueltos = Object.keys(NODE_TYPES).filter((t) => !GRAPH_CATS.some(([, , ts]) => ts.includes(t)) && filtro(t));
+        const usable = (t) => NODE_TYPES[t] && !NODE_TYPES[t].hidden && filtro(t);
+        const grupos = GRAPH_CATS.map(([nombre, color, ts]) => [nombre, color, ts.filter(usable)]);
+        const sueltos = Object.keys(NODE_TYPES).filter((t) => !GRAPH_CATS.some(([, , ts]) => ts.includes(t)) && usable(t));
         if (sueltos.length) grupos.push(["Other", "#8d95a5", sueltos]);
         return grupos.filter(([, , ts]) => ts.length);
       };
@@ -3086,6 +3094,19 @@
               : null;
           case "gradient": {
             if (!ins[0]) return null;
+            const kind = P("kind");
+            if (kind.startsWith("pal:") && PALETTES[kind.slice(4)]) {
+              const cols = [...new Set(PALETTES[kind.slice(4)])].sort((a, b) => lum(a) - lum(b));
+              const step = P("palMode") === "step";
+              const n = cols.length;
+              if (n === 1) cols.push(cols[0]);
+              const stops = cols.map((c, k) => ({
+                p: step ? k / Math.max(1, n) : k / Math.max(1, cols.length - 1),
+                c: hexRgb(c),
+                m: step ? "step" : "smooth",
+              }));
+              return gGradient(ins[0], stops);
+            }
             const stops = [1, 2, 3].map((i) => ({ p: P("p" + i), c: hexRgb(P("c" + i)), m: i < 3 ? P("m" + i) : "smooth" }));
             return gGradient(ins[0], stops);
           }
