@@ -823,6 +823,22 @@
         border: 1px solid #3b4252;
         border-radius: 12px;
       }
+      .go-cat {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .go-cat-tit {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--c);
+        border-bottom: 2px solid var(--c);
+        padding-bottom: 4px;
+      }
+      .go-cat button {
+        text-align: left;
+      }
       #goMenu[hidden] {
         display: none;
       }
@@ -2336,11 +2352,30 @@
           name: "Gradient", inputs: [["Gray", "gray"]], output: "color",
           params: [
             pNum("p1", "Stop 1 position", 0, 1, 0, 0.01), pCol("c1", "Stop 1 color", "#1a1a2e"),
+            pSel("m1", "Stop 1 → 2", [["smooth", "Smooth (gradient)"], ["step", "Step (hard edge)"]], "smooth"),
             pNum("p2", "Stop 2 position", 0, 1, 0.5, 0.01), pCol("c2", "Stop 2 color", "#e94560"),
+            pSel("m2", "Stop 2 → 3", [["smooth", "Smooth (gradient)"], ["step", "Step (hard edge)"]], "smooth"),
             pNum("p3", "Stop 3 position", 0, 1, 1, 0.01), pCol("c3", "Stop 3 color", "#ffe66d"),
           ],
         },
         output: { name: "Output to layer", inputs: [["Color", "color"]], output: null, params: [] },
+      };
+      const GRAPH_CATS = [
+        ["Noise", "#5ccf8a", ["noise", "cells"]],
+        ["Pattern", "#4cc3d9", ["polygon", "stripes", "checker", "tile"]],
+        ["Transform", "#6aa9ff", ["transform", "warp"]],
+        ["Filter", "#b48cff", ["blur", "levels", "invert"]],
+        ["Blend", "#ffb454", ["blend"]],
+        ["Color", "#ff7ab6", ["gradient"]],
+        ["Output", "#ff5c5c", ["output"]],
+      ];
+      const graphCatOf = (type) => GRAPH_CATS.find(([, , ts]) => ts.includes(type)) || ["Other", "#8d95a5", [type]];
+      // tipos agrupados por categoría (lo que no esté en ninguna va al final, en «Other»)
+      const graphTypesByCat = (filtro) => {
+        const grupos = GRAPH_CATS.map(([nombre, color, ts]) => [nombre, color, ts.filter((t) => NODE_TYPES[t] && filtro(t))]);
+        const sueltos = Object.keys(NODE_TYPES).filter((t) => !GRAPH_CATS.some(([, , ts]) => ts.includes(t)) && filtro(t));
+        if (sueltos.length) grupos.push(["Other", "#8d95a5", sueltos]);
+        return grupos.filter(([, , ts]) => ts.length);
       };
       const GRAPH_START = {
         version: 2,
@@ -2960,7 +2995,15 @@
           while (k < st.length - 2 && v > st[k + 1].p) k++;
           const s0 = st[k],
             s1 = st[k + 1];
-          const f = s1.p === s0.p ? 0 : Math.max(0, Math.min(1, (v - s0.p) / (s1.p - s0.p)));
+          // Step: el color de la parada se mantiene hasta la siguiente y ahí cambia de golpe
+          const f =
+            s0.m === "step"
+              ? v >= s1.p
+                ? 1
+                : 0
+              : s1.p === s0.p
+                ? 0
+                : Math.max(0, Math.min(1, (v - s0.p) / (s1.p - s0.p)));
           for (let c = 0; c < 3; c++) out[i * 3 + c] = s0.c[c] + (s1.c[c] - s0.c[c]) * f;
         }
         return out;
@@ -3043,7 +3086,7 @@
               : null;
           case "gradient": {
             if (!ins[0]) return null;
-            const stops = [1, 2, 3].map((i) => ({ p: P("p" + i), c: hexRgb(P("c" + i)) }));
+            const stops = [1, 2, 3].map((i) => ({ p: P("p" + i), c: hexRgb(P("c" + i)), m: i < 3 ? P("m" + i) : "smooth" }));
             return gGradient(ins[0], stops);
           }
           case "output": return ins[0] || null;
@@ -3142,7 +3185,11 @@
         HEAD = 30,
         ROW = 24;
       let graphSelected = null;
-      let graphView = { x: 0, y: 0 };
+      let graphView = { x: 0, y: 0, s: 1 };
+      // aplica el corrimiento y la escala a la capa de nodos y cables
+      const graphApplyView = () => {
+        document.getElementById("goWorld").style.transform = `translate(${graphView.x}px, ${graphView.y}px) scale(${graphView.s})`;
+      };
       let graphDrag = null;
       const graphNodeById = (id) => graph.nodes.find((n) => n.id === id);
       const graphHeight = (n) => HEAD + Math.max(1, NODE_TYPES[n.type].inputs.length) * ROW + 10;
@@ -3193,7 +3240,7 @@
           graphSel.clear();
           graphSel.add(graphSelected);
         }
-        document.getElementById("goWorld").style.transform = `translate(${graphView.x}px, ${graphView.y}px)`;
+        graphApplyView();
         const svg = document.getElementById("goWires");
         let paths = "";
         const wire = (p, q, extra) =>
@@ -3218,6 +3265,7 @@
           const title = document.createElement("div");
           title.className = "gn-tit";
           title.textContent = def.name;
+          title.style.boxShadow = "inset 0 3px 0 " + graphCatOf(n.type)[1];
           el.append(title);
           def.inputs.forEach(([label, type], i) => {
             const row = document.createElement("div");
@@ -3334,7 +3382,7 @@
       };
       const graphWorldPos = (e) => {
         const r = document.getElementById("goView").getBoundingClientRect();
-        return { x: e.clientX - r.left - graphView.x, y: e.clientY - r.top - graphView.y };
+        return { x: (e.clientX - r.left - graphView.x) / graphView.s, y: (e.clientY - r.top - graphView.y) / graphView.s };
       };
       const graphOpen = (open) => {
         document.getElementById("graphOverlay").hidden = !open;
@@ -3350,8 +3398,8 @@
         const p = {};
         for (const def of NODE_TYPES[type].params) p[def.k] = def.def;
         const id = graphNewId();
-        const x = Math.round(-graphView.x + 140 + Math.random() * 60);
-        const y = Math.round(-graphView.y + 120 + Math.random() * 60);
+        const x = Math.round((-graphView.x + 140) / graphView.s + Math.random() * 60);
+        const y = Math.round((-graphView.y + 120) / graphView.s + Math.random() * 60);
         graph.nodes.push({ id, type, x, y, p });
         graphSelected = id;
         document.getElementById("goMenu").hidden = true;
@@ -3362,12 +3410,22 @@
       const graphMenuBuild = () => {
         const menu = document.getElementById("goMenu");
         menu.replaceChildren();
-        for (const [type, def] of Object.entries(NODE_TYPES)) {
-          if (type === "output" && graph.nodes.some((n) => n.type === "output")) continue;
-          const b = document.createElement("button");
-          b.textContent = def.name;
-          b.addEventListener("click", () => graphAddNode(type));
-          menu.append(b);
+        const hayOutput = graph.nodes.some((n) => n.type === "output");
+        for (const [nombre, color, tipos] of graphTypesByCat((t) => !(t === "output" && hayOutput))) {
+          const col = document.createElement("div");
+          col.className = "go-cat";
+          col.style.setProperty("--c", color);
+          const tit = document.createElement("div");
+          tit.className = "go-cat-tit";
+          tit.textContent = nombre;
+          col.append(tit);
+          for (const type of tipos) {
+            const b = document.createElement("button");
+            b.textContent = NODE_TYPES[type].name;
+            b.addEventListener("click", () => graphAddNode(type));
+            col.append(b);
+          }
+          menu.append(col);
         }
       };
 
@@ -3410,19 +3468,20 @@
           });
           goDrop.append(b);
         };
-        const nuevos = Object.entries(NODE_TYPES).filter(
-          ([tp, d]) => entradaPara(d) >= 0 && !(tp === "output" && graph.nodes.some((n) => n.type === "output")),
-        );
-        if (nuevos.length) {
-          titulo("New node");
-          nuevos.forEach(([tp, d]) =>
+        const hayOutput = graph.nodes.some((n) => n.type === "output");
+        const grupos = graphTypesByCat((tp) => entradaPara(NODE_TYPES[tp]) >= 0 && !(tp === "output" && hayOutput));
+        for (const [nombre, color, tipos] of grupos) {
+          titulo(nombre);
+          goDrop.lastChild.style.color = color;
+          for (const tp of tipos) {
+            const d = NODE_TYPES[tp];
             opcion(d.name, () => {
               const i = entradaPara(d);
               // se ubica para que su entrada quede donde se soltó el cable
               const id = graphAddNodeAt(tp, world.x, world.y - (HEAD + i * ROW + ROW / 2));
               graphConnect(fromId, id, i);
-            }),
-          );
+            });
+          }
         }
         if (!goDrop.children.length) return;
         goDrop.hidden = false;
@@ -3458,6 +3517,25 @@
       goBox.hidden = true;
       goView.append(goBox);
       goView.addEventListener("contextmenu", (e) => e.preventDefault());
+      goView.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          const r = goView.getBoundingClientRect();
+          const px = e.clientX - r.left,
+            py = e.clientY - r.top;
+          const giro = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+          const s = Math.max(0.25, Math.min(2.5, graphView.s * Math.exp(-giro * 0.0015)));
+          // el punto bajo el puntero queda en su lugar
+          graphView = {
+            x: px - ((px - graphView.x) * s) / graphView.s,
+            y: py - ((py - graphView.y) * s) / graphView.s,
+            s,
+          };
+          graphApplyView();
+        },
+        { passive: false },
+      );
       // Espacio apretado + arrastre = mover la vista
       let graphSpace = false;
       window.addEventListener("keydown", (e) => {
@@ -3576,8 +3654,8 @@
           dy = e.clientY - d.sy;
         if (!d.moved && Math.hypot(dx, dy) > 5) d.moved = true;
         if (d.kind === "pan") {
-          graphView = { x: d.mx + dx, y: d.my + dy };
-          document.getElementById("goWorld").style.transform = `translate(${graphView.x}px, ${graphView.y}px)`;
+          graphView = { x: d.mx + dx, y: d.my + dy, s: graphView.s };
+          graphApplyView();
         } else if (d.kind === "node" && d.moved) {
           const p = graphWorldPos(e);
           const mx = p.x - d.p0.x,
@@ -3619,8 +3697,8 @@
             }
           } else {
             const r = goView.getBoundingClientRect();
-            const a = { x: Math.min(d.sx, e.clientX) - r.left - graphView.x, y: Math.min(d.sy, e.clientY) - r.top - graphView.y };
-            const b = { x: Math.max(d.sx, e.clientX) - r.left - graphView.x, y: Math.max(d.sy, e.clientY) - r.top - graphView.y };
+            const a = { x: (Math.min(d.sx, e.clientX) - r.left - graphView.x) / graphView.s, y: (Math.min(d.sy, e.clientY) - r.top - graphView.y) / graphView.s };
+            const b = { x: (Math.max(d.sx, e.clientX) - r.left - graphView.x) / graphView.s, y: (Math.max(d.sy, e.clientY) - r.top - graphView.y) / graphView.s };
             const dentro = graph.nodes
               .filter((n) => n.x < b.x && n.x + NODE_W > a.x && n.y < b.y && n.y + graphHeight(n) > a.y)
               .map((n) => n.id);
