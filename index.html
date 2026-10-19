@@ -460,6 +460,217 @@
         background: var(--accent);
         width: 0;
       }
+      #graphOverlay {
+        position: fixed;
+        inset: 0;
+        z-index: 85;
+        display: flex;
+        flex-direction: column;
+        background: #1b1d22;
+        color: #e6e8ee;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        font-weight: 400;
+      }
+      #graphOverlay[hidden] {
+        display: none;
+      }
+      .go-top {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 10px 12px;
+        border-bottom: 1px solid #2c313b;
+      }
+      .go-top strong {
+        margin-right: auto;
+        font-size: 15px;
+      }
+      .go-top button,
+      .go-side button,
+      #goMenu button {
+        font: inherit;
+        font-size: 13px;
+        width: auto;
+        padding: 7px 12px;
+        background: #2a2f3a;
+        color: #e6e8ee;
+        border: 1px solid #3b4252;
+        border-radius: 8px;
+        box-shadow: none;
+      }
+      #goMsg {
+        font-size: 12px;
+        color: #aab1bf;
+        width: 100%;
+      }
+      .go-body {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      #goView {
+        flex: 1;
+        min-height: 220px;
+        position: relative;
+        overflow: hidden;
+        touch-action: none;
+        background: radial-gradient(#2a2f3a 1px, transparent 1px) 0 0 / 24px 24px, #181a1f;
+      }
+      #goWorld {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 0;
+        height: 0;
+      }
+      #goWires {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: visible;
+        pointer-events: none;
+      }
+      #goWires path {
+        fill: none;
+        stroke: #6aa9ff;
+        stroke-width: 3;
+      }
+      #goWires path.temp {
+        stroke: #9fc3ff;
+        stroke-dasharray: 6 5;
+      }
+      .gn {
+        position: absolute;
+        background: #262a33;
+        border: 1px solid #3b4252;
+        border-radius: 10px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+        user-select: none;
+        cursor: grab;
+      }
+      .gn.sel {
+        border-color: #6aa9ff;
+        box-shadow: 0 0 0 2px rgba(106, 169, 255, 0.35);
+      }
+      .gn-tit {
+        height: 30px;
+        line-height: 30px;
+        padding: 0 10px;
+        font-size: 13px;
+        font-weight: 600;
+        background: #2d323d;
+        border-radius: 10px 10px 0 0;
+        border-bottom: 1px solid #3b4252;
+      }
+      .gn-fila {
+        position: absolute;
+        left: 12px;
+        right: 8px;
+        height: 24px;
+        line-height: 24px;
+        font-size: 12px;
+        color: #aab1bf;
+      }
+      .port {
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: #1b1d22;
+        border: 2px solid #6aa9ff;
+        box-sizing: border-box;
+      }
+      .port::after {
+        content: "";
+        position: absolute;
+        inset: -9px;
+      }
+      .port.cand {
+        background: #6aa9ff;
+        box-shadow: 0 0 0 4px rgba(106, 169, 255, 0.35);
+      }
+      .go-side {
+        display: flex;
+        gap: 12px;
+        padding: 10px;
+        border-top: 1px solid #2c313b;
+        max-height: 44vh;
+        overflow: auto;
+      }
+      #goPrev {
+        width: 160px;
+        height: 160px;
+        flex: none;
+        image-rendering: pixelated;
+        background: #111;
+        border: 1px solid #3b4252;
+      }
+      #goParams {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        font-size: 13px;
+      }
+      #goParams label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      #goParams input[type="range"] {
+        width: 100%;
+      }
+      #goParams input[type="number"] {
+        width: 90px;
+        font: inherit;
+        background: #1b1d22;
+        color: #e6e8ee;
+        border: 1px solid #3b4252;
+        border-radius: 6px;
+        padding: 4px 6px;
+      }
+      .go-ayuda {
+        color: #aab1bf;
+        line-height: 1.5;
+      }
+      #goMenu {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 8px;
+        padding: 10px;
+        background: #262a33;
+        border: 1px solid #3b4252;
+        border-radius: 12px;
+      }
+      #goMenu[hidden] {
+        display: none;
+      }
+      @media (min-width: 821px) {
+        .go-body {
+          flex-direction: row;
+        }
+        .go-side {
+          flex-direction: column;
+          width: 320px;
+          max-height: none;
+          border-top: 0;
+          border-left: 1px solid #2c313b;
+        }
+        #goPrev {
+          width: 100%;
+          height: auto;
+          aspect-ratio: 1;
+        }
+      }
       #globo {
         position: fixed;
         z-index: 100;
@@ -490,6 +701,7 @@
         <button id="animToggle" class="mini" title="Muestra u oculta los controles de frames y animación">🎞 Animación</button>
         <button id="tileToggle" class="mini" title="Repite el dibujo alrededor para diseñar mosaicos sin costuras">▦ Tile</button>
         <button id="themeBtn" class="mini" title="Cambia entre el modo crema (claro) y el gris oscuro">☀ Claro</button>
+        <button id="graphBtn" class="mini" title="Grafo de nodos para hacer patrones repetibles">🧩 Grafo</button>
         <span id="status"></span>
       </div>
       <div id="viewport"><canvas id="canvas"></canvas></div>
@@ -850,6 +1062,28 @@
           Chrome o Edge de la PC (el iPhone no tiene USB serie).
         </div>
       </div>
+    </div>
+    <div id="graphOverlay" hidden>
+      <header class="go-top">
+        <strong>Grafo de patrones</strong>
+        <button id="goAdd">+ Nodo</button>
+        <button id="goApply">✓ Aplicar a la capa</button>
+        <button id="goClose">Cerrar</button>
+        <span id="goMsg"></span>
+      </header>
+      <div class="go-body">
+        <div id="goView">
+          <div id="goWorld">
+            <svg id="goWires"></svg>
+            <div id="goNodes"></div>
+          </div>
+        </div>
+        <aside class="go-side">
+          <canvas id="goPrev" title="Vista previa 3×3: así se repite el patrón"></canvas>
+          <div id="goParams"></div>
+        </aside>
+      </div>
+      <div id="goMenu" hidden></div>
     </div>
     <script>
       const canvas = document.getElementById("canvas");
@@ -1784,6 +2018,515 @@
         updateExport();
         redraw();
       };
+      // ---------- grafo de nodos para patrones repetibles: todo son campos con período entero
+      const NODOS = {
+        ruido: { nombre: "Ruido", ent: [], sal: "campo", params: [["escala", "Escala", 2, 16, 4, 1], ["oct", "Detalle", 1, 4, 3, 1], ["sem", "Semilla", 0, 99999, 1, 1]] },
+        celdas: { nombre: "Celdas", ent: [], sal: "campo", params: [["escala", "Escala", 2, 16, 4, 1], ["sem", "Semilla", 0, 99999, 1, 1]] },
+        rayas: { nombre: "Rayas", ent: [], sal: "campo", params: [["cant", "Cantidad", 1, 16, 4, 1], ["grosor", "Grosor", 0.05, 0.95, 0.5, 0.05], ["dir", "Dirección: 0 horiz · 1 vert · 2 diagonal", 0, 2, 0, 1]] },
+        damero: { nombre: "Damero", ent: [], sal: "campo", params: [["n", "Cuadros por lado", 1, 16, 4, 1]] },
+        niveles: { nombre: "Niveles", ent: [["entrada", "campo"]], sal: "campo", params: [["bajo", "Negro desde", 0, 1, 0, 0.01], ["alto", "Blanco desde", 0, 1, 1, 0.01], ["gamma", "Gamma", 0.2, 3, 1, 0.05]] },
+        mezcla: { nombre: "Mezcla", ent: [["A", "campo"], ["B", "campo"]], sal: "campo", params: [["f", "Proporción de B", 0, 1, 0.5, 0.01]] },
+        desplazar: { nombre: "Desplazar", ent: [["entrada", "campo"]], sal: "campo", params: [["dx", "Horizontal", -64, 64, 0, 1], ["dy", "Vertical", -64, 64, 0, 1]] },
+        paleta: { nombre: "Paleta", ent: [["campo", "campo"]], sal: "color", params: [["niv", "Niveles de color", 2, 8, 4, 1]] },
+        salida: { nombre: "Salida (a la capa)", ent: [["color", "color"]], sal: null, params: [] },
+      };
+      const GRAFO_INICIAL = {
+        nodos: [
+          { id: "n1", tipo: "ruido", x: 30, y: 30, p: { escala: 4, oct: 3, sem: 1 } },
+          { id: "n2", tipo: "paleta", x: 240, y: 30, p: { niv: 4 } },
+          { id: "n3", tipo: "salida", x: 450, y: 30, p: {} },
+        ],
+        cables: [
+          { de: "n1", a: "n2", i: 0 },
+          { de: "n2", a: "n3", i: 0 },
+        ],
+      };
+      const grafoCargar = () => {
+        try {
+          const g = JSON.parse(localStorage.getItem("pae-grafo") || "null");
+          if (g && Array.isArray(g.nodos) && Array.isArray(g.cables) && g.nodos.some((n) => n.tipo === "salida")) return g;
+        } catch (e) {}
+        return JSON.parse(JSON.stringify(GRAFO_INICIAL));
+      };
+      const grafoGuardar = () => {
+        try {
+          localStorage.setItem("pae-grafo", JSON.stringify(grafo));
+        } catch (e) {}
+      };
+      let grafo = grafoCargar();
+
+      // Campos: arreglos de W×H con valores entre 0 y 1
+      const campoEstirar = (t) => {
+        let lo = Infinity,
+          hi = -Infinity;
+        for (const v of t) {
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+        const r = hi - lo || 1;
+        for (let i = 0; i < t.length; i++) t[i] = (t[i] - lo) / r;
+        return t;
+      };
+      const campoRuido = (escala, oct, s) => {
+        const t = new Float32Array(W * H);
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            let v = 0,
+              amp = 1,
+              norm = 0;
+            for (let o = 0; o < oct; o++) {
+              const per = escala << o;
+              v += amp * procRuido((x / W) * per, (y / H) * per, per, s + o * 131);
+              norm += amp;
+              amp *= 0.5;
+            }
+            t[y * W + x] = v / norm;
+          }
+        return campoEstirar(t);
+      };
+      const campoCeldas = (escala, s) => {
+        const t = new Float32Array(W * H);
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) t[y * W + x] = procCeldas((x / W) * escala, (y / H) * escala, escala, s);
+        return campoEstirar(t);
+      };
+      const campoRayas = (cant, grosor, dir) => {
+        const t = new Float32Array(W * H);
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            const u = dir === 0 ? (y / H) * cant : dir === 1 ? (x / W) * cant : (x / W + y / H) * cant;
+            t[y * W + x] = u - Math.floor(u) < grosor ? 1 : 0;
+          }
+        return t;
+      };
+      const campoDamero = (n) => {
+        const t = new Float32Array(W * H);
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) t[y * W + x] = (Math.floor((x / W) * n) + Math.floor((y / H) * n)) & 1;
+        return t;
+      };
+      const campoNiveles = (a, bajo, alto, gamma) => {
+        const t = new Float32Array(W * H);
+        const r = Math.max(1e-6, alto - bajo);
+        for (let i = 0; i < t.length; i++) t[i] = Math.pow(Math.max(0, Math.min(1, (a[i] - bajo) / r)), gamma);
+        return t;
+      };
+      const campoMezcla = (a, b, f) => {
+        const t = new Float32Array(W * H);
+        for (let i = 0; i < t.length; i++) t[i] = a[i] * (1 - f) + b[i] * f;
+        return t;
+      };
+      const campoDesplazar = (a, dx, dy) => {
+        const t = new Float32Array(W * H);
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            const sx = (((x + dx) % W) + W) % W,
+              sy = (((y + dy) % H) + H) % H;
+            t[y * W + x] = a[sy * W + sx];
+          }
+        return t;
+      };
+      // Campo → color: niveles entre el color A (el actual) y el color B (el de la textura procedural)
+      const campoPaleta = (a, niv) => {
+        const A = rgbOf(color),
+          B = rgbOf(document.getElementById("procB").value);
+        const out = new Uint8ClampedArray(W * H * 3);
+        for (let i = 0; i < W * H; i++) {
+          const k = Math.round(a[i] * (niv - 1)) / (niv - 1);
+          out[i * 3] = A.r + (B.r - A.r) * k;
+          out[i * 3 + 1] = A.g + (B.g - A.g) * k;
+          out[i * 3 + 2] = A.b + (B.b - A.b) * k;
+        }
+        return out;
+      };
+
+      const ejecutarNodo = (n, ins) => {
+        const p = n.p || {};
+        const num = (k, def) => (typeof p[k] === "number" && isFinite(p[k]) ? p[k] : def);
+        switch (n.tipo) {
+          case "ruido":
+            return campoRuido(num("escala", 4), num("oct", 3), num("sem", 1));
+          case "celdas":
+            return campoCeldas(num("escala", 4), num("sem", 1));
+          case "rayas":
+            return campoRayas(num("cant", 4), num("grosor", 0.5), num("dir", 0));
+          case "damero":
+            return campoDamero(num("n", 4));
+          case "niveles":
+            return ins[0] ? campoNiveles(ins[0], num("bajo", 0), num("alto", 1), num("gamma", 1)) : null;
+          case "mezcla":
+            return ins[0] && ins[1] ? campoMezcla(ins[0], ins[1], num("f", 0.5)) : null;
+          case "desplazar":
+            return ins[0] ? campoDesplazar(ins[0], Math.round(num("dx", 0)), Math.round(num("dy", 0))) : null;
+          case "paleta":
+            return ins[0] ? campoPaleta(ins[0], Math.max(2, Math.round(num("niv", 4)))) : null;
+          case "salida":
+            return ins[0] || null;
+        }
+        return null;
+      };
+      // Evalúa lo que llega a la Salida. Devuelve los píxeles de color o null (sin bucles).
+      const grafoEvaluar = () => {
+        const memo = new Map();
+        const porId = (id) => grafo.nodos.find((n) => n.id === id);
+        const calc = (id, pila) => {
+          if (memo.has(id)) return memo.get(id);
+          if (pila.has(id)) return null;
+          const n = porId(id);
+          if (!n) return null;
+          pila.add(id);
+          const ins = NODOS[n.tipo].ent.map((_, i) => {
+            const c = grafo.cables.find((c) => c.a === id && c.i === i);
+            return c ? calc(c.de, pila) : null;
+          });
+          pila.delete(id);
+          const out = ejecutarNodo(n, ins) || null;
+          memo.set(id, out);
+          return out;
+        };
+        const sal = grafo.nodos.find((n) => n.tipo === "salida");
+        return sal ? calc(sal.id, new Set()) : null;
+      };
+      // ¿Se llega de «desde» a «hasta» siguiendo los cables (hacia la salida)?
+      const grafoAlcanza = (desde, hasta) => {
+        const vistos = new Set();
+        const pila = [desde];
+        while (pila.length) {
+          const id = pila.pop();
+          if (id === hasta) return true;
+          if (vistos.has(id)) continue;
+          vistos.add(id);
+          for (const c of grafo.cables) if (c.de === id) pila.push(c.a);
+        }
+        return false;
+      };
+
+      const goMsg = (t) => (document.getElementById("goMsg").textContent = t);
+      const goPrevActualizar = () => {
+        const cv = document.getElementById("goPrev");
+        cv.width = W * 3;
+        cv.height = H * 3;
+        const c2 = cv.getContext("2d");
+        const img = c2.createImageData(W * 3, H * 3);
+        const col = grafoEvaluar();
+        for (let ty = 0; ty < 3; ty++)
+          for (let tx = 0; tx < 3; tx++)
+            for (let y = 0; y < H; y++)
+              for (let x = 0; x < W; x++) {
+                const d = ((ty * H + y) * W * 3 + tx * W + x) * 4;
+                if (col) {
+                  const s = (y * W + x) * 3;
+                  img.data[d] = col[s];
+                  img.data[d + 1] = col[s + 1];
+                  img.data[d + 2] = col[s + 2];
+                } else {
+                  img.data[d] = img.data[d + 1] = img.data[d + 2] = 60;
+                }
+                img.data[d + 3] = 255;
+              }
+        c2.putImageData(img, 0, 0);
+        goMsg(col ? "" : "Conectá una Paleta a la Salida.");
+      };
+      const grafoAplicar = () => {
+        if (layerLocked()) return;
+        const col = grafoEvaluar();
+        if (!col) return goMsg("Conectá una Paleta a la Salida.");
+        snapGrid();
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            if (!inSel(x, y)) continue;
+            const s = (y * W + x) * 3;
+            grid[y][x] = { c: toHex(col[s], col[s + 1], col[s + 2]), a: 1 };
+          }
+        updateExport();
+        redraw();
+        goMsg("Aplicado a la capa actual. Deshacer lo revierte.");
+      };
+
+      // ---------- interfaz del grafo
+      const NODO_W = 150,
+        CAB = 30,
+        FILA = 24;
+      let goSel = null;
+      let goMundo = { x: 0, y: 0 };
+      let goArr = null;
+      const goPorId = (id) => grafo.nodos.find((n) => n.id === id);
+      const goAlto = (n) => CAB + Math.max(1, NODOS[n.tipo].ent.length) * FILA + 10;
+      const goPuertoIn = (n, i) => ({ x: n.x, y: n.y + CAB + i * FILA + FILA / 2 });
+      const goPuertoOut = (n) => ({ x: n.x + NODO_W, y: n.y + CAB + FILA / 2 });
+      const goEntradaCerca = (desdeId, p) => {
+        const de = goPorId(desdeId);
+        if (!de) return null;
+        const tipo = NODOS[de.tipo].sal;
+        let mejor = null,
+          dist = 28;
+        for (const n of grafo.nodos) {
+          if (n.id === desdeId) continue;
+          NODOS[n.tipo].ent.forEach(([, t], i) => {
+            if (t !== tipo) return;
+            const q = goPuertoIn(n, i);
+            const d = Math.hypot(q.x - p.x, q.y - p.y);
+            if (d <= dist) {
+              dist = d;
+              mejor = { id: n.id, i };
+            }
+          });
+        }
+        return mejor;
+      };
+      const goConectar = (desde, a, i) => {
+        if (goAlcanza(a, desde)) return goMsg("Eso crearía un bucle: no se puede.");
+        grafo.cables = grafo.cables.filter((c) => !(c.a === a && c.i === i));
+        grafo.cables.push({ de: desde, a, i });
+        goMsg("");
+      };
+      const goAlcanza = (desde, hasta) => grafoAlcanza(desde, hasta);
+      const goCambio = () => {
+        goPintar();
+        grafoGuardar();
+        goPrevActualizar();
+      };
+      const goPintar = () => {
+        const mundoEl = document.getElementById("goWorld");
+        mundoEl.style.transform = `translate(${goMundo.x}px, ${goMundo.y}px)`;
+        const svg = document.getElementById("goWires");
+        let trazos = "";
+        const trazo = (p, q, extra) =>
+          `<path d="M ${p.x} ${p.y} C ${p.x + 60} ${p.y}, ${q.x - 60} ${q.y}, ${q.x} ${q.y}"${extra || ""}/>`;
+        for (const c of grafo.cables) {
+          const de = goPorId(c.de),
+            a = goPorId(c.a);
+          if (de && a) trazos += trazo(goPuertoOut(de), goPuertoIn(a, c.i));
+        }
+        if (goArr && goArr.tipo === "cable" && goArr.moved) {
+          const de = goPorId(goArr.de);
+          const destino = goArr.cand ? goPuertoIn(goPorId(goArr.cand.id), goArr.cand.i) : { x: goArr.px, y: goArr.py };
+          if (de) trazos += trazo(goPuertoOut(de), destino, ' class="temp"');
+        }
+        svg.innerHTML = trazos;
+        const nodos = grafo.nodos.map((n) => {
+          const def = NODOS[n.tipo];
+          const el = document.createElement("div");
+          el.className = "gn" + (goSel === n.id ? " sel" : "");
+          el.dataset.id = n.id;
+          Object.assign(el.style, {
+            left: n.x + "px",
+            top: n.y + "px",
+            width: NODO_W + "px",
+            height: goAlto(n) + "px",
+          });
+          const tit = document.createElement("div");
+          tit.className = "gn-tit";
+          tit.textContent = def.nombre;
+          el.append(tit);
+          def.ent.forEach(([lab], i) => {
+            const f = document.createElement("div");
+            f.className = "gn-fila";
+            f.style.top = CAB + i * FILA + "px";
+            f.textContent = lab;
+            const pt = document.createElement("span");
+            pt.className = "port in";
+            pt.dataset.kind = "in";
+            pt.dataset.i = i;
+            pt.style.left = "-7px";
+            pt.style.top = CAB + i * FILA + FILA / 2 - 7 + "px";
+            if (goArr && goArr.cand && goArr.cand.id === n.id && goArr.cand.i === i) pt.classList.add("cand");
+            el.append(f, pt);
+          });
+          if (def.sal) {
+            const pt = document.createElement("span");
+            pt.className = "port out";
+            pt.dataset.kind = "out";
+            pt.style.right = "-7px";
+            pt.style.top = CAB + FILA / 2 - 7 + "px";
+            el.append(pt);
+          }
+          return el;
+        });
+        document.getElementById("goNodes").replaceChildren(...nodos);
+      };
+      const goParams = () => {
+        const box = document.getElementById("goParams");
+        box.replaceChildren();
+        const n = goPorId(goSel);
+        if (!n) {
+          const t = document.createElement("p");
+          t.className = "go-ayuda";
+          t.textContent =
+            "Arrastrá desde la salida (círculo derecho) hasta una entrada (círculo izquierdo) para conectar. Tocá una entrada para desconectarla. Tocá un nodo para cambiar sus valores.";
+          box.append(t);
+          return;
+        }
+        const titulo = document.createElement("strong");
+        titulo.textContent = NODOS[n.tipo].nombre;
+        box.append(titulo);
+        for (const [k, lab, min, max, def0, step] of NODOS[n.tipo].params) {
+          const val = typeof n.p[k] === "number" ? n.p[k] : def0;
+          const fila = document.createElement("label");
+          fila.textContent = lab;
+          const rango = document.createElement("input");
+          rango.type = "range";
+          rango.min = min;
+          rango.max = max;
+          rango.step = step;
+          rango.value = val;
+          const num = document.createElement("input");
+          num.type = "number";
+          num.min = min;
+          num.max = max;
+          num.step = step;
+          num.value = val;
+          const cambia = (v) => {
+            const x = parseFloat(v);
+            if (!isFinite(x)) return;
+            n.p[k] = x;
+            rango.value = x;
+            num.value = x;
+            goPrevActualizar();
+            grafoGuardar();
+          };
+          rango.addEventListener("input", () => cambia(rango.value));
+          num.addEventListener("change", () => cambia(num.value));
+          fila.append(rango, num);
+          box.append(fila);
+        }
+        if (n.tipo !== "salida") {
+          const quitar = document.createElement("button");
+          quitar.textContent = "Quitar nodo";
+          quitar.addEventListener("click", () => {
+            grafo.nodos = grafo.nodos.filter((x) => x.id !== n.id);
+            grafo.cables = grafo.cables.filter((c) => c.de !== n.id && c.a !== n.id);
+            goSel = null;
+            goPintar();
+            goParams();
+            goCambio();
+          });
+          box.append(quitar);
+        }
+      };
+      const goMundoPos = (e) => {
+        const r = document.getElementById("goView").getBoundingClientRect();
+        return { x: e.clientX - r.left - goMundo.x, y: e.clientY - r.top - goMundo.y };
+      };
+      const goAbrir = (abrir) => {
+        document.getElementById("graphOverlay").hidden = !abrir;
+        if (abrir) {
+          goPintar();
+          goParams();
+          goPrevActualizar();
+        } else {
+          grafoGuardar();
+        }
+      };
+      const goNuevo = (tipo) => {
+        const p = {};
+        for (const [k, , , , def0] of NODOS[tipo].params) p[k] = def0;
+        const id = "n" + Date.now().toString(36) + Math.floor(Math.random() * 1000);
+        const cx = -goMundo.x + 140 + Math.random() * 60,
+          cy = -goMundo.y + 120 + Math.random() * 60;
+        grafo.nodos.push({ id, tipo, x: Math.round(cx), y: Math.round(cy), p });
+        goSel = id;
+        document.getElementById("goMenu").hidden = true;
+        goPintar();
+        goParams();
+        goCambio();
+      };
+      const goMenuArmar = () => {
+        const menu = document.getElementById("goMenu");
+        menu.replaceChildren();
+        for (const [tipo, def] of Object.entries(NODOS)) {
+          if (tipo === "salida" && grafo.nodos.some((n) => n.tipo === "salida")) continue;
+          const b = document.createElement("button");
+          b.textContent = def.nombre;
+          b.addEventListener("click", () => goNuevo(tipo));
+          menu.append(b);
+        }
+      };
+
+      const goView = document.getElementById("goView");
+      goView.addEventListener("pointerdown", (e) => {
+        const port = e.target.closest(".port");
+        if (port) {
+          const id = port.closest(".gn").dataset.id;
+          goArr = { tipo: port.dataset.kind === "out" ? "cable" : "in", de: id, a: id, i: +port.dataset.i, pid: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false };
+          goView.setPointerCapture(e.pointerId);
+          e.preventDefault();
+          return;
+        }
+        const nodo = e.target.closest(".gn");
+        if (nodo) {
+          const n = goPorId(nodo.dataset.id);
+          const p = goMundoPos(e);
+          goArr = { tipo: "nodo", id: n.id, dx: p.x - n.x, dy: p.y - n.y, pid: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false };
+          goView.setPointerCapture(e.pointerId);
+          return;
+        }
+        goArr = { tipo: "pan", pid: e.pointerId, sx: e.clientX, sy: e.clientY, mx: goMundo.x, my: goMundo.y, moved: false };
+        goView.setPointerCapture(e.pointerId);
+      });
+      goView.addEventListener("pointermove", (e) => {
+        const a = goArr;
+        if (!a || e.pointerId !== a.pid) return;
+        const dx = e.clientX - a.sx,
+          dy = e.clientY - a.sy;
+        if (!a.moved && Math.hypot(dx, dy) > 5) a.moved = true;
+        if (a.tipo === "pan") {
+          goMundo = { x: a.mx + dx, y: a.my + dy };
+          document.getElementById("goWorld").style.transform = `translate(${goMundo.x}px, ${goMundo.y}px)`;
+        } else if (a.tipo === "nodo" && a.moved) {
+          const n = goPorId(a.id);
+          const p = goMundoPos(e);
+          n.x = Math.round(p.x - a.dx);
+          n.y = Math.round(p.y - a.dy);
+          goPintar();
+        } else if (a.tipo === "cable" && a.moved) {
+          const p = goMundoPos(e);
+          a.px = p.x;
+          a.py = p.y;
+          a.cand = goEntradaCerca(a.de, p);
+          goPintar();
+        }
+      });
+      const goSoltar = (e) => {
+        const a = goArr;
+        if (!a || e.pointerId !== a.pid) return;
+        goArr = null;
+        if (a.tipo === "pan") {
+          if (!a.moved) goSel = null;
+          goPintar();
+          goParams();
+        } else if (a.tipo === "nodo") {
+          if (!a.moved) goSel = a.id;
+          goPintar();
+          goParams();
+          if (a.moved) goCambio();
+        } else if (a.tipo === "cable") {
+          if (a.moved) {
+            const p = goMundoPos(e);
+            const dest = goEntradaCerca(a.de, p);
+            if (dest) goConectar(a.de, dest.id, dest.i);
+            goCambio();
+          }
+        } else if (a.tipo === "in" && !a.moved) {
+          // tocar una entrada la desconecta
+          grafo.cables = grafo.cables.filter((c) => !(c.a === a.a && c.i === a.i));
+          goCambio();
+        }
+      };
+      goView.addEventListener("pointerup", goSoltar);
+      goView.addEventListener("pointercancel", () => (goArr = null));
+
+      document.getElementById("graphBtn").addEventListener("click", () => goAbrir(true));
+      document.getElementById("goClose").addEventListener("click", () => goAbrir(false));
+      document.getElementById("goApply").addEventListener("click", grafoAplicar);
+      document.getElementById("goAdd").addEventListener("click", () => {
+        goMenuArmar();
+        document.getElementById("goMenu").hidden = !document.getElementById("goMenu").hidden;
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !document.getElementById("graphOverlay").hidden) goAbrir(false);
+      });
+
       document.getElementById("procGen").addEventListener("click", generarProc);
       document.getElementById("procSeedBtn").addEventListener("click", () => {
         document.getElementById("procSeed").value = 1 + Math.floor(Math.random() * 99998);
