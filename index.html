@@ -890,6 +890,7 @@
         <button id="tileToggle" class="mini" title="Repite el dibujo alrededor para diseñar mosaicos sin costuras">▦ Tile</button>
         <button id="themeBtn" class="mini" title="Cambia entre el modo crema (claro) y el gris oscuro">☀ Claro</button>
         <button id="graphBtn" class="mini" title="Node graph for seamless patterns">🧩 Graph</button>
+        <button id="toGraphBtn" class="mini" title="Manda el dibujo actual (lo que se ve del cuadro) al grafo como un nodo Image">➜ Al grafo</button>
         <span id="status"></span>
       </div>
       <div id="viewport"><canvas id="canvas"></canvas></div>
@@ -2348,6 +2349,12 @@
             pNum("samples", "Samples", 2, 32, 12, 1),
           ],
         },
+        image: {
+          name: "Image", inputs: [], output: "any", hidden: true,
+          // el tipo de salida sale del parámetro (se lee directo de n.p: se usa también al cargar)
+          outputFrom: (n) => (n.p && (n.p.kind === "gray" || n.p.kind === "alpha") ? "gray" : "color"),
+          params: [pSel("kind", "Output", [["color", "Color"], ["gray", "Grayscale (luminance)"], ["alpha", "Alpha (mask)"]], "color")],
+        },
         invert: { name: "Invert", inputs: [["In", "gray"]], output: "gray", params: [] },
         transform: {
           name: "Transform", inputs: [["In", "gray"]], output: "gray",
@@ -2420,6 +2427,7 @@
         output: { name: "Output to layer", inputs: [["Color", "color"]], output: null, params: [] },
       };
       const GRAPH_CATS = [
+        ["Input", "#e8e8e8", ["image"]],
         ["Noise", "#5ccf8a", ["noise", "cells"]],
         ["Pattern", "#4cc3d9", ["polygon", "stripes", "checker", "tile"]],
         ["Transform", "#6aa9ff", ["transform", "warp"]],
@@ -2478,6 +2486,7 @@
         const n = graph.nodes.find((x) => x.id === id);
         if (!n || !NODE_TYPES[n.type]) return null;
         const def = NODE_TYPES[n.type];
+        if (def.outputFrom) return def.outputFrom(n);
         if (def.output !== "any") return def.output;
         if (seen.has(id)) return null;
         seen.add(id);
@@ -3012,6 +3021,39 @@
           }
         return fromFloat(out, ch);
       };
+      const bytesToB64 = (u8) => {
+        let s = "";
+        for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+        return btoa(s);
+      };
+      const b64ToBytes = (b) => Uint8Array.from(atob(b), (c) => c.charCodeAt(0));
+      const imgCache = new WeakMap();
+      const imageField = (n, kind) => {
+        if (!n.img || !n.img.data) return null;
+        let px = imgCache.get(n.img);
+        if (!px) {
+          px = b64ToBytes(n.img.data);
+          imgCache.set(n.img, px);
+        }
+        const sw = n.img.w,
+          sh = n.img.h;
+        const col = kind === "color" ? new Uint8ClampedArray(W * H * 3) : null;
+        const gray = kind === "color" ? null : new Float32Array(W * H);
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            const j = (Math.floor((y * sh) / H) * sw + Math.floor((x * sw) / W)) * 4;
+            const a = px[j + 3] / 255;
+            const i = y * W + x;
+            if (col) {
+              // lo transparente queda negro (el color se multiplica por la opacidad)
+              col[i * 3] = px[j] * a;
+              col[i * 3 + 1] = px[j + 1] * a;
+              col[i * 3 + 2] = px[j + 2] * a;
+            } else if (kind === "alpha") gray[i] = q16(a);
+            else gray[i] = q16(((0.299 * px[j] + 0.587 * px[j + 1] + 0.114 * px[j + 2]) / 255) * a);
+          }
+        return col || gray;
+      };
       const blendPixel = (mode, a, b) => {
         switch (mode) {
           case "multiply": return a * b;
@@ -3261,6 +3303,7 @@
           case "slopeblur":
             if (!ins[0]) return null;
             return ins[1] instanceof Float32Array ? gSlopeBlur(ins[0], ins[1], P("intensity"), Math.round(P("samples")), P("kind")) : ins[0];
+          case "image": return imageField(n, P("kind"));
           case "invert": return ins[0] ? Float32Array.from(ins[0], (v) => 1 - v) : null;
           case "transform": return ins[0] ? gTransform(ins[0], Math.round(P("offsetX")), Math.round(P("offsetY")), P("rotate"), P("flipX"), P("flipY")) : null;
           case "tile":
@@ -3532,7 +3575,9 @@
             const antes = graphParam(n, def);
             n.p[def.k] = v;
             if (def.onChange) def.onChange(n, v, antes);
+            const quitados = graphPruneTypes();
             graphChanged();
+            if (quitados) goMsg(`Removed ${quitados} connection${quitados > 1 ? "s" : ""} that no longer matched the type.`);
             if (def.k === "kind" || def.rebuild) graphParamsPanel();
           };
           if (def.t === "select") {
@@ -3966,6 +4011,34 @@
       });
 
       document.getElementById("graphBtn").addEventListener("click", () => graphOpen(true));
+      document.getElementById("toGraphBtn").addEventListener("click", () => {
+        const F = flat(cf);
+        const rgba = new Uint8Array(W * H * 4);
+        let algo = false;
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            const p = F[y][x];
+            if (!p || p.e || !(p.a > 0)) continue;
+            const c = rgbOf(p.c);
+            const i = (y * W + x) * 4;
+            rgba[i] = c.r;
+            rgba[i + 1] = c.g;
+            rgba[i + 2] = c.b;
+            rgba[i + 3] = Math.round(Math.min(1, p.a) * 255);
+            algo = true;
+          }
+        if (!algo) {
+          setStatus("No hay nada dibujado para mandar al grafo.");
+          return;
+        }
+        const desfase = (graph.nodes.filter((n) => n.type === "image").length % 6) * 24;
+        const id = graphAddNodeAt("image", (-graphView.x + 40) / graphView.s + desfase, (-graphView.y + 40) / graphView.s + desfase);
+        graphNodeById(id).img = { w: W, h: H, data: bytesToB64(rgba) };
+        graphSelectOnly([id]);
+        graphPreviewId = id;
+        graphSave();
+        graphOpen(true);
+      });
       document.getElementById("goClose").addEventListener("click", () => graphOpen(false));
       document.getElementById("goApply").addEventListener("click", graphApply);
       let graphClearArmed = 0;
