@@ -2313,7 +2313,7 @@
         },
         blur: {
           name: "Blur", inputs: [["In", "any"]], output: "any",
-          params: [pNum("radius", "Radius (px)", 0, 16, 2, 1)],
+          params: [pNum("radius", "Radius (px)", 0, 16, 1, 0.1)],
         },
         warp: {
           name: "Warp", inputs: [["In", "any"], ["Warp map", "gray"]], output: "any",
@@ -2355,14 +2355,41 @@
           params: [
             pSel("kind", "Preset", [["custom", "Custom (3 stops)"], ...GRADIENT_PALETTES.map((n) => ["pal:" + n, n])], "custom"),
             only(GRADIENT_PALETTES.map((n) => "pal:" + n), pSel("palMode", "Interpolation", [["step", "Step (hard edge)"], ["smooth", "Smooth (gradient)"]], "step")),
-            only(["custom"], pNum("p1", "Stop 1 position", 0, 1, 0, 0.01)),
-            only(["custom"], pCol("c1", "Stop 1 color", "#000000")),
-            only(["custom"], pSel("m1", "Stop 1 → 2", [["smooth", "Smooth (gradient)"], ["step", "Step (hard edge)"]], "smooth")),
-            only(["custom"], pNum("p2", "Stop 2 position", 0, 1, 0.5, 0.01)),
-            only(["custom"], pCol("c2", "Stop 2 color", "#808080")),
-            only(["custom"], pSel("m2", "Stop 2 → 3", [["smooth", "Smooth (gradient)"], ["step", "Step (hard edge)"]], "smooth")),
-            only(["custom"], pNum("p3", "Stop 3 position", 0, 1, 1, 0.01)),
-            only(["custom"], pCol("c3", "Stop 3 color", "#ffffff")),
+            {
+              ...only(["custom"], pNum("count", "Stops", 2, 8, 3, 1)),
+              rebuild: true,
+              // al cambiar la cantidad: posiciones parejas de 0 a 1; las paradas nuevas, en la rampa de negro a blanco
+              // las paradas que siguen con el gris automático de la rampa (o son nuevas) se recalculan;
+              // las que se cambiaron a mano se respetan
+              onChange: (n, nuevo, viejo) => {
+                const cnt = Math.max(2, Math.min(8, Math.round(nuevo)));
+                const vie = Math.max(2, Math.min(8, Math.round(viejo)));
+                const gris = (i, c) => {
+                  const g = Math.round((255 * (i - 1)) / (c - 1)).toString(16).padStart(2, "0");
+                  return "#" + g + g + g;
+                };
+                const defs = NODE_TYPES.gradient.params;
+                for (let i = 1; i <= cnt; i++) {
+                  n.p["p" + i] = Math.round(((i - 1) / (cnt - 1)) * 100) / 100;
+                  const actual = graphParam(n, defs.find((d) => d.k === "c" + i)).toLowerCase();
+                  // en la base de 3 paradas el gris del medio es #808080 (no el #7f7f7f de la cuenta)
+                  const automatico = actual === gris(i, vie) || (vie === 3 && i === 2 && actual === "#808080");
+                  if (i > vie || automatico) n.p["c" + i] = gris(i, cnt);
+                }
+              },
+            },
+            ...Array.from({ length: 8 }, (_, k) => k + 1).flatMap((i) => {
+              const cuenta = (n) => Math.round(graphParam(n, NODE_TYPES.gradient.params.find((d) => d.k === "count")));
+              const gris = ["#000000", "#808080", "#ffffff"][i - 1] || "#ffffff";
+              return [
+                { ...only(["custom"], pNum("p" + i, `Stop ${i} position`, 0, 1, [0, 0.5, 1][i - 1] ?? 1, 0.01)), show: (n) => cuenta(n) >= i },
+                { ...only(["custom"], pCol("c" + i, `Stop ${i} color`, gris)), show: (n) => cuenta(n) >= i },
+                {
+                  ...only(["custom"], pSel("m" + i, `Stop ${i} → ${i + 1}`, [["smooth", "Smooth (gradient)"], ["step", "Step (hard edge)"]], "smooth")),
+                  show: (n) => cuenta(n) > i,
+                },
+              ];
+            }),
           ],
         },
         output: { name: "Output to layer", inputs: [["Color", "color"]], output: null, params: [] },
@@ -2764,28 +2791,37 @@
         }
         return Uint8ClampedArray.from(t, (v) => Math.round(v));
       };
-      // Blur: tres pasadas de promedio en caja (se parece mucho a un gaussiano), dando la vuelta por los bordes
+      // Blur gaussiano: el radio es el desvío (sigma) en píxeles, así 0.3 o 0.5 suavizan apenas.
+      // Se hace en dos pasadas (horizontal y vertical) y da la vuelta por los bordes.
       const gBlur = (a, r) => {
         const ch = chOf(a);
         let t = Float32Array.from(toFloat(a));
-        if (r < 1) return fromFloat(t, ch);
+        if (!(r > 0.01)) return fromFloat(t, ch);
+        const half = Math.max(1, Math.ceil(r * 3));
+        const kern = [];
+        let suma = 0;
+        for (let k = -half; k <= half; k++) {
+          const w = Math.exp(-(k * k) / (2 * r * r));
+          kern.push(w);
+          suma += w;
+        }
+        for (let i = 0; i < kern.length; i++) kern[i] /= suma;
         const pasada = (src, horiz) => {
           const out = new Float32Array(src.length);
-          const n = 2 * r + 1;
           for (let y = 0; y < H; y++)
             for (let x = 0; x < W; x++)
               for (let c = 0; c < ch; c++) {
                 let s = 0;
-                for (let k = -r; k <= r; k++) {
+                for (let k = -half; k <= half; k++) {
                   const xx = horiz ? (((x + k) % W) + W) % W : x,
                     yy = horiz ? y : (((y + k) % H) + H) % H;
-                  s += src[(yy * W + xx) * ch + c];
+                  s += src[(yy * W + xx) * ch + c] * kern[k + half];
                 }
-                out[(y * W + x) * ch + c] = s / n;
+                out[(y * W + x) * ch + c] = s;
               }
           return out;
         };
-        for (let p = 0; p < 3; p++) t = pasada(pasada(t, true), false);
+        t = pasada(pasada(t, true), false);
         return fromFloat(t, ch);
       };
       // Warp: cada píxel toma el valor de otra posición, corrida según el mapa (con interpolación y vuelta por los bordes).
@@ -3070,7 +3106,7 @@
           }
           case "levels": return ins[0] ? gLevels(ins[0], P("black"), P("white"), P("gamma"), P("outBlack"), P("outWhite")) : null;
           case "polygon": return gPolygon(P("shape"), P("size"), P("centerX"), P("centerY"), P("rotation"));
-          case "blur": return ins[0] ? gBlur(ins[0], Math.round(P("radius"))) : null;
+          case "blur": return ins[0] ? gBlur(ins[0], P("radius")) : null;
           case "warp":
             if (!ins[0]) return null;
             return ins[1] instanceof Float32Array ? gWarp(ins[0], ins[1], P("kind"), P("intensity"), P("angle")) : ins[0];
@@ -3107,7 +3143,8 @@
               }));
               return gGradient(ins[0], stops);
             }
-            const stops = [1, 2, 3].map((i) => ({ p: P("p" + i), c: hexRgb(P("c" + i)), m: i < 3 ? P("m" + i) : "smooth" }));
+            const cnt = Math.max(2, Math.min(8, Math.round(P("count"))));
+            const stops = Array.from({ length: cnt }, (_, k) => k + 1).map((i) => ({ p: P("p" + i), c: hexRgb(P("c" + i)), m: i < cnt ? P("m" + i) : "smooth" }));
             return gGradient(ins[0], stops);
           }
           case "output": return ins[0] || null;
@@ -3335,14 +3372,17 @@
         const kind = kindDef ? graphParam(n, kindDef) : null;
         for (const def of NODE_TYPES[n.type].params) {
           if (def.when && !def.when.includes(kind)) continue;
+          if (def.show && !def.show(n)) continue;
           const val = graphParam(n, def);
           const row = document.createElement("label");
           row.textContent = def.label;
           const apply = (v) => {
             n.p = n.p || {};
+            const antes = graphParam(n, def);
             n.p[def.k] = v;
+            if (def.onChange) def.onChange(n, v, antes);
             graphChanged();
-            if (def.k === "kind") graphParamsPanel();
+            if (def.k === "kind" || def.rebuild) graphParamsPanel();
           };
           if (def.t === "select") {
             const sel = document.createElement("select");
