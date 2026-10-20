@@ -959,6 +959,7 @@
           >
             OK</button
           ><button id="aDup" class="mini" title="Duplica el frame actual a continuación">⧉ Duplicar frame</button
+          ><button id="aDel" class="mini" title="Borra el frame actual (se puede deshacer)">🗑 Borrar frame</button
           ><label style="justify-content: flex-start; gap: 4px; margin: 0; cursor: pointer"
             ><input type="checkbox" id="aOnion" />Onion skin</label
           >
@@ -5138,6 +5139,19 @@
           frames[cf].map((g) => g.map((r) => r.slice())),
         );
         cf++;
+        selCel();
+      };
+      // Borra el frame actual (siempre queda al menos uno)
+      document.getElementById("aDel").onclick = () => {
+        if (frames.length <= 1) {
+          setStatus("No se puede borrar el único frame.");
+          return;
+        }
+        pausePlay();
+        checkpoint();
+        frames.splice(cf, 1);
+        cf = Math.min(cf, frames.length - 1);
+        document.getElementById("aCount").value = frames.length;
         selCel();
       };
       document.getElementById("lAdd").onclick = () => {
