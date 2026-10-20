@@ -1062,6 +1062,15 @@
         <button id="quantBtn" title="Al importar una imagen, cada píxel toma el color más parecido de la paleta elegida">
           🎨 Ajustar a la paleta al importar imagen
         </button>
+        <button
+          id="palMapBtn"
+          title="Cambia cada píxel de la capa actual (o de la selección) por el color de la paleta que le toca según su brillo: los oscuros toman los colores oscuros y los claros, los claros"
+        >
+          🌗 Aplicar paleta por brillo (gradient map)
+        </button>
+        <label style="justify-content: flex-start; gap: 6px; cursor: pointer"
+          ><input type="checkbox" id="palMapStretch" /> Usar todos los colores (estirar el brillo)</label
+        >
       </div>
       <div class="section">
         <h2>Herramientas</h2>
@@ -6121,6 +6130,45 @@
           true,
         );
       })();
+
+      // Paleta por brillo (gradient map): los colores de la paleta van de oscuro a claro y cada píxel toma el
+      // de su franja de brillo. Con «estirar», el píxel más oscuro y el más claro del dibujo usan los extremos.
+      document.getElementById("palMapBtn").addEventListener("click", () => {
+        if (layerLocked()) return;
+        const cols = [...new Set(PALETTES[document.getElementById("paletteSel").value] || [])].sort((a, b) => lum(a) - lum(b));
+        if (!cols.length) return setStatus("La paleta elegida está vacía.");
+        const brillo = (p) => {
+          const c = rgbOf(p.c);
+          return (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255;
+        };
+        const cuenta = (x, y) => !grid[y][x].e && grid[y][x].a > 0 && inSel(x, y);
+        let lo = 0,
+          hi = 1;
+        if (document.getElementById("palMapStretch").checked) {
+          lo = 1;
+          hi = 0;
+          for (let y = 0; y < H; y++)
+            for (let x = 0; x < W; x++)
+              if (cuenta(x, y)) {
+                const b = brillo(grid[y][x]);
+                lo = Math.min(lo, b);
+                hi = Math.max(hi, b);
+              }
+        }
+        const rango = hi - lo || 1;
+        checkpoint();
+        let n = 0;
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            if (!cuenta(x, y)) continue;
+            const b = Math.max(0, Math.min(1, (brillo(grid[y][x]) - lo) / rango));
+            grid[y][x] = { c: cols[Math.min(cols.length - 1, Math.floor(b * cols.length))], a: grid[y][x].a };
+            n++;
+          }
+        updateExport();
+        redraw();
+        setStatus(n ? `Paleta aplicada a ${n} píxeles (se puede deshacer).` : "No hay nada dibujado en la capa actual.");
+      });
 
       // ---------- zoom y desplazamiento
       const viewport = document.getElementById("viewport");
