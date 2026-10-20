@@ -6223,22 +6223,39 @@
         selCel();
         setStatus("Proyecto nuevo (se puede deshacer)");
       };
+      // El proyecto guarda el dibujo y también el grafo (nodos, animaciones e imágenes), así viaja entero
+      // de un dispositivo a otro.
       document.getElementById("projSave").onclick = () =>
-        dl(new Blob([JSON.stringify(serialize())], { type: "application/json" }), "proyecto.pixel.json");
+        dl(new Blob([JSON.stringify({ ...serialize(), graph })], { type: "application/json" }), "proyecto.pixel.json");
       document.getElementById("projOpen").onclick = () => document.getElementById("projIn").click();
+      const loadProjectText = (t) => {
+        checkpoint();
+        try {
+          const o = JSON.parse(t);
+          loadDoc(o);
+          let conGrafo = false;
+          if (o.graph && o.graph.version === 2 && Array.isArray(o.graph.nodes) && Array.isArray(o.graph.links)) {
+            graph = o.graph;
+            graphNextId = 1 + Math.max(99, ...graph.nodes.map((n) => parseInt(String(n.id).replace(/D/g, ""), 10) || 0));
+            graphSanitize();
+            graphSave();
+            graphSelectOnly([]);
+            graphPreviewId = null;
+            if (!document.getElementById("graphOverlay").hidden) graphOpen(true);
+            conGrafo = true;
+          }
+          setStatus(conGrafo ? "Proyecto abierto ✓ (con el grafo)" : "Proyecto abierto ✓");
+        } catch (_) {
+          undoStack.pop();
+          updUndoUI();
+          setStatus("⚠ Ese archivo no es un proyecto de este editor");
+        }
+      };
       document.getElementById("projIn").onchange = (e) => {
         const f = e.target.files[0];
         if (!f) return;
         f.text().then((t) => {
-          checkpoint();
-          try {
-            loadDoc(JSON.parse(t));
-            setStatus("Proyecto abierto ✓");
-          } catch (_) {
-            undoStack.pop();
-            updUndoUI();
-            setStatus("⚠ Ese archivo no es un proyecto de este editor");
-          }
+          loadProjectText(t);
           e.target.value = "";
         });
       };
