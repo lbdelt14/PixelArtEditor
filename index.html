@@ -2234,7 +2234,8 @@
       const NOISE_KINDS = [
         ["perlin", "Perlin"],
         ["value", "Value"],
-        ["gaussian", "Gaussian (white)"],
+        ["gsmooth", "Gaussian"],
+        ["gaussian", "White noise"],
         ["turbulence", "Turbulence"],
         ["ridged", "Ridged"],
         ["marble", "Marble"],
@@ -2244,13 +2245,14 @@
         ["caustic", "Caustic"],
       ];
       const GRADIENT_PALETTES = Object.keys(PALETTES).filter((n) => n !== "Mi paleta");
-      const FRACTAL = ["perlin", "value", "turbulence", "ridged", "marble", "wood", "moisture"];
+      const FRACTAL = ["perlin", "value", "gsmooth", "turbulence", "ridged", "marble", "wood", "moisture"];
       const NODE_TYPES = {
         noise: {
           name: "Noise", inputs: [], output: "gray",
           params: [
             pSel("kind", "Type", NOISE_KINDS, "perlin"),
-            only(["perlin", "value", "turbulence", "ridged", "marble", "wood", "voronoi", "moisture", "caustic"], pNum("scale", "Scale", 1, 16, 4, 1)),
+            only(["perlin", "value", "gsmooth", "turbulence", "ridged", "marble", "wood", "voronoi", "moisture", "caustic"], pNum("scale", "Scale", 1, 16, 4, 1)),
+            only(["gsmooth"], pNum("softness", "Softness", 0.3, 1.5, 0.7, 0.05)),
             only(FRACTAL, pNum("octaves", "Octaves", 1, 8, 4, 1)),
             only(FRACTAL, pNum("persistence", "Persistence", 0.1, 1, 0.5, 0.05)),
             only(FRACTAL, pNum("lacunarity", "Lacunarity", 2, 4, 2, 1)),
@@ -2585,10 +2587,29 @@
         return (a + (b - a) * v) * 0.7071 + 0.5;
       };
       // ---- ruidos: todos con período entero (se repiten sin costuras) y calculados en la grilla
-      const nBase = (kind, u, w, per, s) => (kind === "value" ? procRuido(u, w, per, s) : gPerlin(u, w, per, s));
+      const nGaussBase = (u, w, per, s, sigma) => {
+        const x0 = Math.floor(u),
+          y0 = Math.floor(w);
+        const R = Math.ceil(sigma * 3);
+        let suma = 0,
+          pesos = 0;
+        for (let j = -R; j <= R + 1; j++)
+          for (let i = -R; i <= R + 1; i++) {
+            const gx = x0 + i,
+              gy = y0 + j;
+            const dx = u - gx,
+              dy = w - gy;
+            const p = Math.exp(-(dx * dx + dy * dy) / (2 * sigma * sigma));
+            suma += p * procHash(((gx % per) + per) % per, ((gy % per) + per) % per, s);
+            pesos += p;
+          }
+        return suma / pesos;
+      };
+      const nBase = (kind, u, w, per, s, o) =>
+        kind === "value" ? procRuido(u, w, per, s) : kind === "gsmooth" ? nGaussBase(u, w, per, s, o.softness) : gPerlin(u, w, per, s);
       // Suma fractal. Las octavas que pasan la resolución de la grilla no aportan nada visible: se cortan.
       const nFbm = (fx, fy, o, seed, shape) => {
-        const base = o.kind === "value" ? "value" : "perlin";
+        const base = o.kind === "value" || o.kind === "gsmooth" ? o.kind : "perlin";
         const tope = Math.max(W, H);
         let v = 0,
           amp = 1,
@@ -2599,7 +2620,7 @@
           // corrimiento al azar de cada octava (no cambia el período, así que sigue repitiéndose)
           const ox = procHash(k, 17, seed) * per,
             oy = procHash(k, 31, seed) * per;
-          let n = nBase(base, fx * per + ox, fy * per + oy, per, seed + k * 131);
+          let n = nBase(base, fx * per + ox, fy * per + oy, per, seed + k * 131, o);
           if (shape === "turbulence") n = Math.abs(2 * n - 1);
           else if (shape === "ridged") n = Math.pow(1 - Math.abs(2 * n - 1), 1 + o.sharpness);
           v += amp * n;
@@ -3091,6 +3112,7 @@
               smooth: Math.round(P("smooth")),
               iterations: Math.round(P("iterations")),
               phase: P("phase"),
+              softness: P("softness"),
               seed: Math.round(P("seed")),
             });
           case "cells": return gCells(Math.round(P("scale")), Math.round(P("seed")));
