@@ -2423,6 +2423,31 @@
           outputFrom: (n) => (n.p && (n.p.kind === "gray" || n.p.kind === "alpha") ? "gray" : "color"),
           params: [pSel("kind", "Output", [["color", "Color"], ["gray", "Grayscale (luminance)"], ["alpha", "Alpha (mask)"]], "color")],
         },
+        particles: {
+          name: "Particles", inputs: [["Shape (optional)", "gray"]], output: "gray",
+          params: [
+            pSel("kind", "Mode", [["burst", "Fireworks (bursts)"], ["fountain", "Fountain / confetti"], ["rain", "Rain / snow"], ["sparkle", "Sparkle / twinkle"]], "burst"),
+            pNum("count", "Count", 1, 400, 60, 1),
+            only(["fountain", "burst"], pNum("emitX", "Emitter X", 0, 1, 0.5, 0.01)),
+            only(["fountain", "burst"], pNum("emitY", "Emitter Y", 0, 1, 0.5, 0.01)),
+            only(["burst"], pNum("bursts", "Bursts per loop", 1, 8, 3, 1)),
+            only(["burst"], pSel("burstPos", "Burst position", [["random", "Random"], ["emitter", "Emitter"]], "random")),
+            only(["fountain"], pNum("direction", "Direction (°)", 0, 360, 270, 1)),
+            only(["fountain"], pNum("spread", "Spread (°)", 0, 360, 60, 1)),
+            only(["rain"], pNum("rainDir", "Direction (°)", 0, 360, 90, 1)),
+            only(["fountain", "burst", "rain"], pNum("speed", "Speed", 0, 4, 1.2, 0.05)),
+            only(["fountain", "burst"], pNum("gravity", "Gravity", -4, 4, 1.5, 0.05)),
+            only(["fountain", "burst"], pNum("life", "Lifetime", 0.05, 1, 0.6, 0.01)),
+            only(["fountain", "burst"], pSel("fade", "Fade out", [["yes", "Yes"], ["no", "No"]], "yes")),
+            only(["fountain", "burst", "rain"], pNum("trail", "Trail (frames)", 0, 8, 0, 1)),
+            only(["sparkle"], pNum("blinks", "Blinks per loop", 1, 8, 2, 1)),
+            pNum("size", "Size (px)", 1, 8, 1, 1),
+            pNum("spin", "Spin (turns per loop, with Shape)", 0, 8, 0, 1),
+            pNum("randLum", "Random brightness", 0, 1, 0.6, 0.01),
+            pSel("wrap", "Wrap at edges (seamless)", [["yes", "Yes"], ["no", "No"]], "yes"),
+            pNum("seed", "Seed", 0, 99999, 1, 1),
+          ],
+        },
         invert: { name: "Invert", inputs: [["In", "gray"]], output: "gray", params: [] },
         transform: {
           name: "Transform", inputs: [["In", "gray"]], output: "gray",
@@ -2498,6 +2523,7 @@
         ["Input", "#e8e8e8", ["image"]],
         ["Noise", "#5ccf8a", ["noise", "cells"]],
         ["Pattern", "#4cc3d9", ["polygon", "stripes", "checker", "tile"]],
+        ["Particles", "#ff9f43", ["particles"]],
         ["Transform", "#6aa9ff", ["transform", "warp"]],
         ["Filter", "#b48cff", ["blur", "nublur", "slopeblur"]],
         ["Adjust", "#e0c45c", ["levels", "threshold", "quantize", "invert"]],
@@ -3128,6 +3154,117 @@
           }
         return col || gray;
       };
+      // Partículas. Cada una tiene sus valores al azar (fijos por semilla) y su posición sale de una
+      // fórmula del tiempo del loop: no hay estado guardado y el último cuadro empalma con el primero.
+      // Salen en gris: cada partícula con su brillo, para darles color después con un Gradient.
+      const gParticles = (o) => {
+        const t = graphFrame / graphFrames();
+        const dt = 1 / graphFrames();
+        const out = new Float32Array(W * H);
+        const R = (i, k) => procHash(i, k, o.seed * 13 + 5);
+        const s = Math.max(1, Math.round(o.size));
+        const off = Math.floor((s - 1) / 2);
+        // dibuja un cuadradito de s×s; x, y son fracciones del lienzo
+        const plot = (x, y, v) => {
+          if (!(v > 0)) return;
+          const px = Math.floor(x * W),
+            py = Math.floor(y * H);
+          for (let dy = 0; dy < s; dy++)
+            for (let dx = 0; dx < s; dx++) {
+              let xx = px - off + dx,
+                yy = py - off + dy;
+              if (o.wrap) {
+                xx = ((xx % W) + W) % W;
+                yy = ((yy % H) + H) % H;
+              } else if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+              const i = yy * W + xx;
+              if (v > out[i]) out[i] = v;
+            }
+        };
+        // con «Shape»: la forma de entrada, de s×s píxeles, girada (ángulo al azar + «spin» vueltas enteras
+        // por loop, para que cierre); cada partícula gira para su lado
+        const shape = o.shape;
+        const stamp = (x, y, v, i) => {
+          if (!(v > 0)) return;
+          const ang = 2 * Math.PI * (R(i, 5) + (R(i, 6) < 0.5 ? -1 : 1) * o.spin * t);
+          const co = Math.cos(ang),
+            si = Math.sin(ang);
+          const cx = x * W,
+            cy = y * H,
+            rr = Math.ceil(s * 0.75) + 1;
+          for (let dy = -rr; dy <= rr; dy++)
+            for (let dx = -rr; dx <= rr; dx++) {
+              const px = Math.floor(cx) + dx,
+                py = Math.floor(cy) + dy;
+              const lx = px + 0.5 - cx,
+                ly = py + 0.5 - cy;
+              const u = (lx * co + ly * si) / s + 0.5,
+                w2 = (-lx * si + ly * co) / s + 0.5;
+              if (u < 0 || u >= 1 || w2 < 0 || w2 >= 1) continue;
+              const val = shape[Math.floor(w2 * H) * W + Math.floor(u * W)] * v;
+              if (!(val > 0)) continue;
+              let xx = px,
+                yy = py;
+              if (o.wrap) {
+                xx = ((xx % W) + W) % W;
+                yy = ((yy % H) + H) % H;
+              } else if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+              const k = yy * W + xx;
+              if (val > out[k]) out[k] = val;
+            }
+        };
+        const dibujar = (x, y, v, i) => (shape ? stamp(x, y, v, i) : plot(x, y, v));
+        const N = Math.round(o.count);
+        for (let i = 0; i < N; i++) {
+          const brillo = 1 - o.randLum * R(i, 4);
+          if (o.kind === "sparkle") {
+            // destello: se prende y se apaga «blinks» veces por loop, cada uno con su fase
+            const env = Math.max(0, Math.sin(2 * Math.PI * (t * o.blinks + R(i, 1))));
+            dibujar(R(i, 2), R(i, 3), q16(Math.pow(env, 3) * brillo), i);
+            continue;
+          }
+          if (o.kind === "rain") {
+            // lluvia: velocidad entera de lienzos por loop en cada eje, así al dar la vuelta empalma
+            const th = (o.rainDir * Math.PI) / 180;
+            const vx = Math.round(o.speed * Math.cos(th)),
+              vy = Math.round(o.speed * Math.sin(th));
+            for (let k = 0; k <= o.trail; k++) {
+              const tt = t - k * dt;
+              dibujar(R(i, 2) + vx * tt, R(i, 3) + vy * tt, q16(brillo * (1 - k / (o.trail + 1))), i);
+            }
+            continue;
+          }
+          // fuegos artificiales y fuente: nace en t0, vive «life» (fracción del loop), con gravedad
+          let ex = o.emitX,
+            ey = o.emitY,
+            t0,
+            ang;
+          if (o.kind === "burst") {
+            const B = Math.max(1, Math.round(o.bursts));
+            const b = i % B;
+            t0 = b / B + (R(b, 7) * 0.1) / B;
+            if (o.burstPos === "random") {
+              ex = R(b, 8);
+              ey = R(b, 9) * 0.7 + 0.15;
+            }
+            ang = 2 * Math.PI * R(i, 1);
+          } else {
+            t0 = R(i, 0);
+            ang = ((o.direction + (R(i, 1) - 0.5) * o.spread) * Math.PI) / 180;
+          }
+          const sp = o.speed * (0.5 + 0.5 * R(i, 3));
+          const vx = Math.cos(ang) * sp,
+            vy = Math.sin(ang) * sp;
+          for (let k = 0; k <= o.trail; k++) {
+            const edad = (((t - k * dt - t0) % 1) + 1) % 1;
+            if (edad > o.life) continue;
+            const v = brillo * (o.fade === "yes" ? 1 - edad / o.life : 1) * (1 - k / (o.trail + 1));
+            dibujar(ex + vx * edad, ey + vy * edad + 0.5 * o.gravity * edad * edad, q16(v), i);
+          }
+        }
+        for (let i = 0; i < out.length; i++) out[i] = q16(out[i]);
+        return out;
+      };
       const blendPixel = (mode, a, b) => {
         switch (mode) {
           case "multiply": return a * b;
@@ -3393,6 +3530,30 @@
             if (!ins[0]) return null;
             return ins[1] instanceof Float32Array ? gSlopeBlur(ins[0], ins[1], P("intensity"), Math.round(P("samples")), P("kind")) : ins[0];
           case "image": return imageField(n, P("kind"));
+          case "particles":
+            return gParticles({
+              kind: P("kind"),
+              count: P("count"),
+              emitX: P("emitX"),
+              emitY: P("emitY"),
+              bursts: P("bursts"),
+              burstPos: P("burstPos"),
+              direction: P("direction"),
+              spread: P("spread"),
+              rainDir: P("rainDir"),
+              speed: P("speed"),
+              gravity: P("gravity"),
+              life: P("life"),
+              fade: P("fade"),
+              trail: Math.round(P("trail")),
+              blinks: Math.max(1, Math.round(P("blinks"))),
+              size: P("size"),
+              randLum: P("randLum"),
+              wrap: P("wrap") === "yes",
+              spin: Math.round(P("spin")),
+              shape: ins[0] instanceof Float32Array ? ins[0] : null,
+              seed: Math.round(P("seed")),
+            });
           case "invert": return ins[0] ? Float32Array.from(ins[0], (v) => 1 - v) : null;
           case "transform": return ins[0] ? gTransform(ins[0], Math.round(P("offsetX")), Math.round(P("offsetY")), P("rotate"), P("flipX"), P("flipY")) : null;
           case "tile":
