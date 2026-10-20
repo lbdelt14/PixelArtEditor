@@ -770,6 +770,55 @@
       #goBox[hidden] {
         display: none;
       }
+      #goTime {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #aab1bf;
+      }
+      #goTime input[type="range"] {
+        flex: 1;
+        min-width: 80px;
+      }
+      #goTime input[type="number"] {
+        width: 52px;
+        font: inherit;
+        background: #1b1d22;
+        color: #e6e8ee;
+        border: 1px solid #3b4252;
+        border-radius: 6px;
+        padding: 3px 5px;
+      }
+      #goTime label {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .go-anim-btn {
+        width: 30px !important;
+        padding: 3px 0 !important;
+        margin-top: 2px;
+        opacity: 0.6;
+      }
+      .go-anim-btn.on {
+        opacity: 1;
+        background: #34507a !important;
+        border-color: #6aa9ff !important;
+      }
+      .go-anim-box {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        padding: 8px;
+        margin: -2px 0 4px;
+        border: 1px dashed #34507a;
+        border-radius: 8px;
+      }
+      .go-anim-box label:nth-child(3) {
+        grid-column: 1 / -1;
+      }
       #goDrop {
         position: fixed;
         z-index: 92;
@@ -1273,6 +1322,14 @@
           <div id="goPrevWrap">
             <button id="goTile" type="button" title="Switch between the single tile and the 3×3 repeat (the original is marked in the center)">▦ 3×3</button>
             <div id="goPrevBox" class="tile3" title="Wheel: zoom · Drag: move · Double-click: reset"><div id="goPrevInner"><canvas id="goPrev"></canvas><div id="goPrevFrame"></div></div></div>
+            <div id="goTime">
+              <button id="goPlay" type="button" title="Play / pause the loop">▶</button>
+              <input id="goFrame" type="range" min="0" max="15" value="0" title="Frame" />
+              <span id="goFrameVal">1/16</span>
+              <label>Frames <input id="goFrames" type="number" min="2" max="64" value="16" /></label>
+              <label>FPS <input id="goFps" type="number" min="1" max="30" value="8" /></label>
+              <button id="goBake" type="button" title="Render every frame of the loop into the editor's animation frames (current layer)">Bake to frames</button>
+            </div>
           </div>
           <div id="goParams"></div>
         </aside>
@@ -2257,6 +2314,7 @@
             only(FRACTAL, pNum("octaves", "Octaves", 1, 8, 4, 1)),
             only(FRACTAL, pNum("persistence", "Persistence", 0.1, 1, 0.5, 0.05)),
             only(FRACTAL, pNum("lacunarity", "Lacunarity", 2, 4, 2, 1)),
+            only(FRACTAL, pNum("evolution", "Evolution", 0, 1, 0, 0.01)),
             only(["ridged", "marble", "wood", "caustic"], pNum("sharpness", "Sharpness", 0.2, 4, 1, 0.05)),
             only(["marble"], pNum("veins", "Veins", 1, 16, 4, 1)),
             only(["marble"], pSel("direction", "Direction", [["horizontal", "Horizontal"], ["vertical", "Vertical"], ["diagonal", "Diagonal"]], "horizontal")),
@@ -2654,6 +2712,12 @@
           const ox = procHash(k, 17, seed) * per,
             oy = procHash(k, 31, seed) * per;
           let n = nBase(base, fx * per + ox, fy * per + oy, per, seed + k * 131, o);
+          if (o.evolution) {
+            // en 0 y en 1 da exactamente el mismo ruido: animado de 0 a 1 en Saw, el loop cierra solo
+            const th = o.evolution * 2 * Math.PI;
+            const n2 = nBase(base, fx * per + ox, fy * per + oy, per, seed + k * 131 + 7777, o);
+            n = Math.max(0, Math.min(1, 0.5 + (n - 0.5) * Math.cos(th) + (n2 - 0.5) * Math.sin(th)));
+          }
           if (shape === "turbulence") n = Math.abs(2 * n - 1);
           else if (shape === "ridged") n = Math.pow(1 - Math.abs(2 * n - 1), 1 + o.sharpness);
           v += amp * n;
@@ -3238,13 +3302,27 @@
       };
       const hexRgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
+      // Reloj del loop: el cuadro actual y la cantidad de cuadros (se guarda en el grafo)
+      let graphFrame = 0;
+      const graphFrames = () => Math.max(2, Math.min(64, Math.round((graph.time && graph.time.frames) || 16)));
+      const graphFps = () => Math.max(1, Math.min(30, Math.round((graph.time && graph.time.fps) || 8)));
+      // Valor animado: va de «from» a «to» con la curva elegida, «cycles» veces por loop (entero, así cierra
+      // perfecto), corrido por «phase». Saw sube y vuelve de golpe; Ping-pong y Sine van y vuelven.
+      const graphAnimValue = (an) => {
+        const N = graphFrames();
+        const x = ((((graphFrame / N) * Math.max(1, Math.round(an.cycles || 1)) + (an.phase || 0)) % 1) + 1) % 1;
+        const s = an.curve === "saw" ? x : an.curve === "pingpong" ? (x < 0.5 ? 2 * x : 2 - 2 * x) : 0.5 - 0.5 * Math.cos(2 * Math.PI * x);
+        return an.from + (an.to - an.from) * s;
+      };
       // Lee los parámetros de un nodo, con su valor por defecto
       const graphParam = (n, def) => {
         const v = n.p ? n.p[def.k] : undefined;
         if (def.t === "num") {
+          const an = n.anim && n.anim[def.k];
+          if (an && an.on) return graphAnimValue(an);
           if (typeof v === "number" && isFinite(v)) return v;
-          const n = typeof v === "string" ? parseFloat(v) : NaN;
-          return isFinite(n) ? n : def.def;
+          const nv = typeof v === "string" ? parseFloat(v) : NaN;
+          return isFinite(nv) ? nv : def.def;
         }
         if (def.t === "select") return def.opts.some(([val]) => val === v) ? v : def.def;
         return typeof v === "string" ? v : def.def;
@@ -3276,6 +3354,7 @@
               iterations: Math.round(P("iterations")),
               phase: P("phase"),
               softness: P("softness"),
+              evolution: P("evolution"),
               seed: Math.round(P("seed")),
             });
           case "cells": return gCells(Math.round(P("scale")), Math.round(P("seed")));
@@ -3568,6 +3647,7 @@
           if (def.when && !def.when.includes(kind)) continue;
           if (def.show && !def.show(n)) continue;
           const val = graphParam(n, def);
+          let extra = null;
           const row = document.createElement("label");
           row.textContent = def.label;
           const apply = (v) => {
@@ -3620,8 +3700,39 @@
             range.addEventListener("input", () => set(range.value));
             num.addEventListener("change", () => set(num.value));
             row.append(range, num);
+            // ⏱: animar este valor en el loop
+            const an = n.anim && n.anim[def.k];
+            const tb = document.createElement("button");
+            tb.type = "button";
+            tb.className = "go-anim-btn" + (an && an.on ? " on" : "");
+            tb.textContent = "⏱";
+            tb.title = "Animate this value in the loop";
+            tb.addEventListener("click", (e) => {
+              e.preventDefault();
+              n.anim = n.anim || {};
+              const cur = n.anim[def.k];
+              if (cur && cur.on) cur.on = false;
+              else
+                n.anim[def.k] = {
+                  on: true,
+                  from: cur ? cur.from : val,
+                  to: cur ? cur.to : val < def.max ? def.max : def.min,
+                  curve: cur ? cur.curve : "sine",
+                  cycles: cur ? cur.cycles : 1,
+                  phase: cur ? cur.phase : 0,
+                };
+              graphChanged();
+              graphParamsPanel();
+            });
+            row.append(tb);
+            if (an && an.on) {
+              range.disabled = true;
+              num.disabled = true;
+              extra = graphAnimBox(def, an);
+            }
           }
           box.append(row);
+          if (extra) box.append(extra);
         }
         if (n.type !== "output") {
           const del = document.createElement("button");
@@ -3637,6 +3748,53 @@
           box.append(del);
         }
       };
+      const graphAnimBox = (def, an) => {
+        const box = document.createElement("div");
+        box.className = "go-anim-box";
+        const campo = (label, el) => {
+          const l = document.createElement("label");
+          l.textContent = label;
+          l.append(el);
+          box.append(l);
+        };
+        const numIn = (k, min, max, step) => {
+          const i = document.createElement("input");
+          i.type = "number";
+          i.min = min;
+          i.max = max;
+          i.step = step;
+          i.value = an[k];
+          i.addEventListener("change", () => {
+            const x = parseFloat(i.value);
+            if (!isFinite(x)) return;
+            an[k] = x;
+            graphChanged();
+          });
+          return i;
+        };
+        campo("From", numIn("from", def.min, def.max, def.step));
+        campo("To", numIn("to", def.min, def.max, def.step));
+        const sel = document.createElement("select");
+        for (const [v, t] of [
+          ["sine", "Sine (smooth back and forth)"],
+          ["pingpong", "Ping-pong (linear back and forth)"],
+          ["saw", "Saw (From → To, then jumps back)"],
+        ]) {
+          const o = document.createElement("option");
+          o.value = v;
+          o.textContent = t;
+          sel.append(o);
+        }
+        sel.value = an.curve;
+        sel.addEventListener("change", () => {
+          an.curve = sel.value;
+          graphChanged();
+        });
+        campo("Curve", sel);
+        campo("Cycles", numIn("cycles", 1, 16, 1));
+        campo("Phase", numIn("phase", 0, 1, 0.05));
+        return box;
+      };
       const graphWorldPos = (e) => {
         const r = document.getElementById("goView").getBoundingClientRect();
         return { x: (e.clientX - r.left - graphView.x) / graphView.s, y: (e.clientY - r.top - graphView.y) / graphView.s };
@@ -3647,7 +3805,9 @@
           graphRender();
           graphParamsPanel();
           graphPreview();
+          graphTimeUI();
         } else {
+          graphStop();
           graphSave();
         }
       };
@@ -3839,7 +3999,10 @@
               const mapa = new Map();
               for (const c of graphClipboard.nodes) {
                 const id = graphAddNodeAt(c.type, c.x + 30 * graphPasteCount, c.y + 30 * graphPasteCount);
-                graphNodeById(id).p = JSON.parse(JSON.stringify(c.p || {}));
+                const nuevo = graphNodeById(id);
+                nuevo.p = JSON.parse(JSON.stringify(c.p || {}));
+                if (c.anim) nuevo.anim = JSON.parse(JSON.stringify(c.anim));
+                if (c.img) nuevo.img = JSON.parse(JSON.stringify(c.img));
                 mapa.set(c.id, id);
               }
               for (const l of graphClipboard.links) graph.links.push({ from: mapa.get(l.from), to: mapa.get(l.to), input: l.input });
@@ -4041,6 +4204,92 @@
       });
       document.getElementById("goClose").addEventListener("click", () => graphOpen(false));
       document.getElementById("goApply").addEventListener("click", graphApply);
+      let graphTimer = null;
+      const graphTimeUI = () => {
+        const N = graphFrames();
+        const fr = document.getElementById("goFrame");
+        fr.max = N - 1;
+        fr.value = graphFrame;
+        document.getElementById("goFrameVal").textContent = graphFrame + 1 + "/" + N;
+        document.getElementById("goFrames").value = N;
+        document.getElementById("goFps").value = graphFps();
+        document.getElementById("goPlay").textContent = graphTimer ? "⏸" : "▶";
+      };
+      const graphSetFrame = (fr) => {
+        const N = graphFrames();
+        graphFrame = ((fr % N) + N) % N;
+        graphTimeUI();
+        graphPreview();
+      };
+      const graphStop = () => {
+        clearInterval(graphTimer);
+        graphTimer = null;
+        graphTimeUI();
+      };
+      const graphPlay = () => {
+        clearInterval(graphTimer);
+        graphTimer = setInterval(() => graphSetFrame(graphFrame + 1), 1000 / graphFps());
+        graphTimeUI();
+      };
+      document.getElementById("goPlay").addEventListener("click", () => (graphTimer ? graphStop() : graphPlay()));
+      document.getElementById("goFrame").addEventListener("input", (e) => {
+        graphStop();
+        graphSetFrame(parseInt(e.target.value, 10) || 0);
+      });
+      document.getElementById("goFrames").addEventListener("change", (e) => {
+        graph.time = { frames: Math.max(2, Math.min(64, parseInt(e.target.value, 10) || 16)), fps: graphFps() };
+        graphSave();
+        graphSetFrame(Math.min(graphFrame, graphFrames() - 1));
+      });
+      document.getElementById("goFps").addEventListener("change", (e) => {
+        graph.time = { frames: graphFrames(), fps: Math.max(1, Math.min(30, parseInt(e.target.value, 10) || 8)) };
+        graphSave();
+        if (graphTimer) graphPlay();
+        else graphTimeUI();
+      });
+      // Bake: cada cuadro del loop va a un cuadro de animación del editor, en la capa actual.
+      // Primero se calculan todos; si falta la salida, no se toca nada. Se puede deshacer.
+      document.getElementById("goBake").addEventListener("click", () => {
+        if (layerLocked()) return;
+        graphStop();
+        const N = graphFrames();
+        const guardado = graphFrame;
+        const cuadros = [];
+        for (let fr = 0; fr < N; fr++) {
+          graphFrame = fr;
+          const col = graphEval();
+          if (!col) {
+            graphFrame = guardado;
+            return goMsg("Connect a Gradient or a Color source to the Output.");
+          }
+          cuadros.push(col);
+        }
+        graphFrame = guardado;
+        if (typeof pausePlay === "function") pausePlay();
+        checkpoint();
+        while (frames.length < N) frames.push(layers.map(() => blank()));
+        frames.length = N;
+        for (let fr = 0; fr < N; fr++) {
+          const g = frames[fr][cl].map((r) => r.slice());
+          const col = cuadros[fr];
+          for (let y = 0; y < H; y++)
+            for (let x = 0; x < W; x++) {
+              if (!inSel(x, y)) continue;
+              const s = (y * W + x) * 3;
+              g[y][x] = { c: toHex(col[s], col[s + 1], col[s + 2]), a: 1 };
+            }
+          frames[fr][cl] = g;
+        }
+        cf = 0;
+        const fps = Math.max(1, Math.min(24, graphFps()));
+        document.getElementById("aFps").value = fps;
+        document.getElementById("aFpsVal").textContent = fps;
+        document.getElementById("aCount").value = N;
+        if (getComputedStyle(document.getElementById("anim")).display === "none") document.getElementById("animToggle").click();
+        selCel();
+        updateExport();
+        goMsg(`Baked ${N} frames into the current layer. Undo reverts it. Close the graph and use 🎞 to play it or export a GIF.`);
+      });
       let graphClearArmed = 0;
       const goClearBtn = document.getElementById("goClear");
       const graphClearReset = () => {
