@@ -2325,6 +2325,29 @@
             only(["directional"], pNum("angle", "Angle (°)", 0, 360, 0, 1)),
           ],
         },
+        threshold: {
+          name: "Threshold", inputs: [["In", "gray"]], output: "gray",
+          params: [pNum("threshold", "Threshold", 0, 1, 0.5, 0.01), pNum("softness", "Softness", 0, 0.5, 0, 0.01)],
+        },
+        quantize: {
+          name: "Quantize", inputs: [["In", "any"]], output: "any",
+          params: [
+            pNum("levels", "Levels", 2, 32, 4, 1),
+            pSel("dither", "Dither", [["none", "None"], ["2", "Bayer 2×2"], ["4", "Bayer 4×4"], ["8", "Bayer 8×8"]], "none"),
+          ],
+        },
+        nublur: {
+          name: "Non-uniform Blur", inputs: [["In", "any"], ["Blur map", "gray"]], output: "any",
+          params: [pNum("radius", "Max radius (px)", 0, 16, 4, 0.1)],
+        },
+        slopeblur: {
+          name: "Slope Blur", inputs: [["In", "any"], ["Slope map", "gray"]], output: "any",
+          params: [
+            pSel("kind", "Mode", [["average", "Blur (average)"], ["min", "Min (darken)"], ["max", "Max (lighten)"]], "average"),
+            pNum("intensity", "Intensity (px)", 0, 32, 4, 0.5),
+            pNum("samples", "Samples", 2, 32, 12, 1),
+          ],
+        },
         invert: { name: "Invert", inputs: [["In", "gray"]], output: "gray", params: [] },
         transform: {
           name: "Transform", inputs: [["In", "gray"]], output: "gray",
@@ -2400,7 +2423,8 @@
         ["Noise", "#5ccf8a", ["noise", "cells"]],
         ["Pattern", "#4cc3d9", ["polygon", "stripes", "checker", "tile"]],
         ["Transform", "#6aa9ff", ["transform", "warp"]],
-        ["Filter", "#b48cff", ["blur", "levels", "invert"]],
+        ["Filter", "#b48cff", ["blur", "nublur", "slopeblur"]],
+        ["Adjust", "#e0c45c", ["levels", "threshold", "quantize", "invert"]],
         ["Blend", "#ffb454", ["blend"]],
         ["Color", "#ff7ab6", ["gradient"]],
         ["Output", "#ff5c5c", ["output"]],
@@ -2891,6 +2915,103 @@
           }
         return fromFloat(out, ch);
       };
+      // Muestra con interpolación y vuelta por los bordes (src en números con coma, ch canales)
+      const sampleWrap = (src, ch, fx, fy, c) => {
+        const x0 = Math.floor(fx),
+          y0 = Math.floor(fy),
+          tx = fx - x0,
+          ty = fy - y0;
+        const g = (xx, yy) => src[((((yy % H) + H) % H) * W + ((((xx % W) + W) % W))) * ch + c];
+        return (g(x0, y0) * (1 - tx) + g(x0 + 1, y0) * tx) * (1 - ty) + (g(x0, y0 + 1) * (1 - tx) + g(x0 + 1, y0 + 1) * tx) * ty;
+      };
+      // Threshold: blanco desde el umbral; con softness, un borde suave alrededor
+      const gThreshold = (a, th, soft) => {
+        const t = new Float32Array(W * H);
+        for (let i = 0; i < t.length; i++) {
+          if (soft <= 0) t[i] = a[i] >= th ? 1 : 0;
+          else {
+            const x = Math.max(0, Math.min(1, (a[i] - (th - soft)) / (2 * soft)));
+            t[i] = q16(x * x * (3 - 2 * x));
+          }
+        }
+        return t;
+      };
+      // Matriz de Bayer de n×n (n potencia de 2), para el tramado ordenado
+      const bayer = (n) => {
+        let m = [[0]];
+        while (m.length < n) {
+          const k = m.length;
+          const base = [[0, 2], [3, 1]];
+          m = Array.from({ length: 2 * k }, (_, y) => Array.from({ length: 2 * k }, (_, x) => 4 * m[y % k][x % k] + base[Math.floor(y / k)][Math.floor(x / k)]));
+        }
+        return m;
+      };
+      // Quantize: N niveles por canal, con tramado de Bayer opcional (se repite si el lienzo es múltiplo de la matriz)
+      const gQuantize = (a, levels, dither) => {
+        const ch = chOf(a);
+        const src = toFloat(a);
+        const escala = ch === 1 ? 1 : 255;
+        const out = new Float32Array(src.length);
+        const s = dither === "none" ? 0 : Number(dither);
+        const M = s ? bayer(s) : null;
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++)
+            for (let c = 0; c < ch; c++) {
+              const i = (y * W + x) * ch + c;
+              let v = src[i] / escala;
+              if (M) v += ((M[y % s][x % s] + 0.5) / (s * s) - 0.5) / (levels - 1);
+              out[i] = (Math.round(Math.max(0, Math.min(1, v)) * (levels - 1)) / (levels - 1)) * escala;
+            }
+        return fromFloat(out, ch);
+      };
+      // Non-uniform Blur: varias versiones desenfocadas (de 0 al radio máximo) mezcladas según el mapa
+      const gNonUniformBlur = (a, map, maxR) => {
+        const ch = chOf(a);
+        const L = 6;
+        const niveles = Array.from({ length: L }, (_, k) => toFloat(gBlur(a, (maxR * k) / (L - 1))));
+        const out = new Float32Array(W * H * ch);
+        for (let i = 0; i < W * H; i++) {
+          const m = Math.max(0, Math.min(1, map[i])) * (L - 1);
+          const k0 = Math.floor(m),
+            k1 = Math.min(L - 1, k0 + 1),
+            fr = m - k0;
+          for (let c = 0; c < ch; c++) out[i * ch + c] = niveles[k0][i * ch + c] * (1 - fr) + niveles[k1][i * ch + c] * fr;
+        }
+        return fromFloat(out, ch);
+      };
+      // Slope Blur: desde cada píxel se camina siguiendo la pendiente del mapa y se juntan muestras:
+      // promedio (blur), el mínimo o el máximo. «intensity» es el largo total del recorrido en píxeles.
+      const gSlopeBlur = (a, map, intensity, samples, mode) => {
+        const ch = chOf(a);
+        const src = toFloat(a);
+        const out = new Float32Array(W * H * ch);
+        const paso = intensity / samples;
+        const acc = new Float32Array(ch);
+        for (let y = 0; y < H; y++)
+          for (let x = 0; x < W; x++) {
+            let px = x,
+              py = y,
+              n = 0;
+            for (let c = 0; c < ch; c++) acc[c] = mode === "min" ? Infinity : mode === "max" ? -Infinity : 0;
+            for (let k = 0; k <= samples; k++) {
+              for (let c = 0; c < ch; c++) {
+                const v = sampleWrap(src, ch, px, py, c);
+                if (mode === "min") acc[c] = Math.min(acc[c], v);
+                else if (mode === "max") acc[c] = Math.max(acc[c], v);
+                else acc[c] += v;
+              }
+              n++;
+              const gx = sampleWrap(map, 1, px + 1, py, 0) - sampleWrap(map, 1, px - 1, py, 0),
+                gy = sampleWrap(map, 1, px, py + 1, 0) - sampleWrap(map, 1, px, py - 1, 0);
+              const len = Math.hypot(gx, gy);
+              if (len < 1e-6) break;
+              px += (gx / len) * paso;
+              py += (gy / len) * paso;
+            }
+            for (let c = 0; c < ch; c++) out[(y * W + x) * ch + c] = mode === "average" ? acc[c] / n : acc[c];
+          }
+        return fromFloat(out, ch);
+      };
       const blendPixel = (mode, a, b) => {
         switch (mode) {
           case "multiply": return a * b;
@@ -3132,6 +3253,14 @@
           case "warp":
             if (!ins[0]) return null;
             return ins[1] instanceof Float32Array ? gWarp(ins[0], ins[1], P("kind"), P("intensity"), P("angle")) : ins[0];
+          case "threshold": return ins[0] ? gThreshold(ins[0], P("threshold"), P("softness")) : null;
+          case "quantize": return ins[0] ? gQuantize(ins[0], Math.round(P("levels")), P("dither")) : null;
+          case "nublur":
+            if (!ins[0]) return null;
+            return ins[1] instanceof Float32Array ? gNonUniformBlur(ins[0], ins[1], P("radius")) : gBlur(ins[0], P("radius"));
+          case "slopeblur":
+            if (!ins[0]) return null;
+            return ins[1] instanceof Float32Array ? gSlopeBlur(ins[0], ins[1], P("intensity"), Math.round(P("samples")), P("kind")) : ins[0];
           case "invert": return ins[0] ? Float32Array.from(ins[0], (v) => 1 - v) : null;
           case "transform": return ins[0] ? gTransform(ins[0], Math.round(P("offsetX")), Math.round(P("offsetY")), P("rotate"), P("flipX"), P("flipY")) : null;
           case "tile":
