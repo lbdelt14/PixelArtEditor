@@ -3466,7 +3466,11 @@
       let graphPreviewId = null;
       let graphLastTap = null;
       const goMsg = (t) => (document.getElementById("goMsg").textContent = t);
+      const graphTileLabel = () => {
+        document.getElementById("goTile").textContent = (graphTileView ? "▦ 3×3" : "▢ 1 tile") + ` (${W}×${H})`;
+      };
       const graphPreview = () => {
+        graphTileLabel();
         const cv = document.getElementById("goPrev");
         const n = graphTileView ? 3 : 1;
         cv.width = W * n;
@@ -4414,7 +4418,7 @@
       // Tile view: 3×3 in the panel, or 1 tile. Tapping the image also switches back to 3×3.
       const graphSetTileView = (v) => {
         graphTileView = v;
-        document.getElementById("goTile").textContent = graphTileView ? "▦ 3×3" : "▢ 1 tile";
+        graphTileLabel();
         document.getElementById("goPrev").classList.toggle("go-full", !graphTileView);
         goPrevBox.classList.toggle("tile3", graphTileView);
         prevZoomReset();
