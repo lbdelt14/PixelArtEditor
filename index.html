@@ -279,6 +279,26 @@
         width: 100%;
         max-width: 680px;
       }
+      #toGraphPanel {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        font-size: 12px;
+        width: 100%;
+        max-width: 680px;
+      }
+      #toGraphPanel[hidden] {
+        display: none;
+      }
+      #toGraphPanel label {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      #toGraphPanel select {
+        width: auto;
+      }
       #status {
         color: var(--ink-dim);
         font-size: 11px;
@@ -939,8 +959,24 @@
         <button id="tileToggle" class="mini" title="Repite el dibujo alrededor para diseñar mosaicos sin costuras">▦ Tile</button>
         <button id="themeBtn" class="mini" title="Cambia entre el modo crema (claro) y el gris oscuro">☀ Claro</button>
         <button id="graphBtn" class="mini" title="Node graph for seamless patterns">🧩 Graph</button>
-        <button id="toGraphBtn" class="mini" title="Manda el dibujo actual (lo que se ve del cuadro) al grafo como un nodo Image">➜ Al grafo</button>
+        <button id="toGraphBtn" class="mini" title="Manda el dibujo al grafo como un nodo Image (elegís qué cuadros y qué capas)">➜ Al grafo</button>
         <span id="status"></span>
+      </div>
+      <div id="toGraphPanel" hidden>
+        <label>Cuadros
+          <select id="tgFrames">
+            <option value="one">Cuadro actual</option>
+            <option value="all">Todos los cuadros (animación)</option>
+          </select>
+        </label>
+        <label>Capas
+          <select id="tgLayers">
+            <option value="visible">Capas visibles</option>
+            <option value="current">Sólo la capa actual</option>
+          </select>
+        </label>
+        <button id="tgSend" class="mini">Mandar</button>
+        <button id="tgCancel" class="mini">Cancelar</button>
       </div>
       <div id="viewport"><canvas id="canvas"></canvas></div>
       <div id="anim" style="width: 100%; max-width: 640px; display: none; flex-direction: column; gap: 8px">
@@ -2429,6 +2465,22 @@
           outputFrom: (n) => (n.p && (n.p.kind === "gray" || n.p.kind === "alpha") ? "gray" : "color"),
           params: [pSel("kind", "Output", [["color", "Color"], ["gray", "Grayscale (luminance)"], ["alpha", "Alpha (mask)"]], "color")],
         },
+        colorreplace: {
+          name: "Color Replace", inputs: [["Color", "color"]], output: "color",
+          params: [
+            { ...pNum("count", "Colors to replace", 1, 8, 2, 1), rebuild: true },
+            pNum("tolerance", "Tolerance (%)", 0, 100, 0, 1),
+            ...Array.from({ length: 8 }, (_, k) => k + 1).flatMap((i) => {
+              const cuenta = (n) => Math.round(graphParam(n, NODE_TYPES.colorreplace.params[0]));
+              const de = ["#ff0000", "#00ff00"][i - 1] || "#000000";
+              const a = ["#3366ff", "#ffcc00"][i - 1] || "#000000";
+              return [
+                { ...pCol("from" + i, `From ${i}`, de), show: (n) => cuenta(n) >= i },
+                { ...pCol("to" + i, `To ${i}`, a), show: (n) => cuenta(n) >= i },
+              ];
+            }),
+          ],
+        },
         particles: {
           name: "Particles", inputs: [["Shape (optional)", "gray"]], output: "gray",
           params: [
@@ -2534,7 +2586,7 @@
         ["Filter", "#b48cff", ["blur", "nublur", "slopeblur"]],
         ["Adjust", "#e0c45c", ["levels", "threshold", "quantize", "invert"]],
         ["Blend", "#ffb454", ["blend"]],
-        ["Color", "#ff7ab6", ["gradient"]],
+        ["Color", "#ff7ab6", ["gradient", "colorreplace"]],
         ["Output", "#ff5c5c", ["output"]],
       ];
       const graphCatOf = (type) => GRAPH_CATS.find(([, , ts]) => ts.includes(type)) || ["Other", "#8d95a5", [type]];
@@ -2568,7 +2620,10 @@
       const graphSave = () => {
         try {
           localStorage.setItem(GRAPH_KEY, JSON.stringify(graph));
-        } catch (e) {}
+        } catch (e) {
+          // no entra en el guardado automático del navegador (por ejemplo, una animación grande en un nodo Image)
+          if (typeof goMsg === "function") goMsg("Too big for the browser autosave: use 💾 Save project so this graph isn’t lost.");
+        }
       };
       let graph = graphLoad();
       // Los ids nuevos arrancan por encima de los guardados (antes el contador volvía a 100 en cada carga
@@ -3134,13 +3189,17 @@
       };
       const b64ToBytes = (b) => Uint8Array.from(atob(b), (c) => c.charCodeAt(0));
       const imgCache = new WeakMap();
+      // Con varios cuadros (animación), cada cuadro del loop muestra el que le toca. Si el loop tiene
+      // otra cantidad de cuadros, la animación se estira o se acelera para entrar justo en él.
       const imageField = (n, kind) => {
-        if (!n.img || !n.img.data) return null;
-        let px = imgCache.get(n.img);
-        if (!px) {
-          px = b64ToBytes(n.img.data);
-          imgCache.set(n.img, px);
+        if (!n.img || !(n.img.data || (n.img.frames && n.img.frames.length))) return null;
+        let cache = imgCache.get(n.img);
+        if (!cache) {
+          cache = n.img.frames ? n.img.frames.map((b) => b64ToBytes(b)) : [b64ToBytes(n.img.data)];
+          imgCache.set(n.img, cache);
         }
+        const k = Math.min(cache.length - 1, Math.floor((graphFrame * cache.length) / graphFrames()));
+        const px = cache[k];
         const sw = n.img.w,
           sh = n.img.h;
         const col = kind === "color" ? new Uint8ClampedArray(W * H * 3) : null;
@@ -3269,6 +3328,29 @@
           }
         }
         for (let i = 0; i < out.length; i++) out[i] = q16(out[i]);
+        return out;
+      };
+      const gColorReplace = (src, pares, tol) => {
+        const out = new Uint8ClampedArray(src);
+        const lim = (tol / 100) * 255;
+        for (let i = 0; i < W * H; i++) {
+          const r = src[i * 3],
+            g = src[i * 3 + 1],
+            b = src[i * 3 + 2];
+          let mejor = null,
+            md = Infinity;
+          for (const p of pares) {
+            const d = Math.max(Math.abs(r - p.de[0]), Math.abs(g - p.de[1]), Math.abs(b - p.de[2]));
+            if (d <= lim && d < md) {
+              md = d;
+              mejor = p;
+            }
+          }
+          if (!mejor) continue;
+          out[i * 3] = mejor.a[0] + r - mejor.de[0];
+          out[i * 3 + 1] = mejor.a[1] + g - mejor.de[1];
+          out[i * 3 + 2] = mejor.a[2] + b - mejor.de[2];
+        }
         return out;
       };
       const blendPixel = (mode, a, b) => {
@@ -3596,6 +3678,12 @@
             const cnt = Math.max(2, Math.min(8, Math.round(P("count"))));
             const stops = Array.from({ length: cnt }, (_, k) => k + 1).map((i) => ({ p: P("p" + i), c: hexRgb(P("c" + i)), m: i < cnt ? P("m" + i) : "smooth" }));
             return gGradient(ins[0], stops);
+          }
+          case "colorreplace": {
+            if (!(ins[0] instanceof Uint8ClampedArray)) return null;
+            const cnt = Math.max(1, Math.min(8, Math.round(P("count"))));
+            const pares = Array.from({ length: cnt }, (_, k) => ({ de: hexRgb(P("from" + (k + 1))), a: hexRgb(P("to" + (k + 1))) }));
+            return gColorReplace(ins[0], pares, P("tolerance"));
           }
           case "output": return ins[0] || null;
         }
@@ -4355,13 +4443,20 @@
       });
 
       document.getElementById("graphBtn").addEventListener("click", () => graphOpen(true));
+      const toGraphPanel = document.getElementById("toGraphPanel");
       document.getElementById("toGraphBtn").addEventListener("click", () => {
-        const F = flat(cf);
+        toGraphPanel.hidden = !toGraphPanel.hidden;
+        if (!toGraphPanel.hidden) document.getElementById("tgFrames").options[1].textContent = "Todos los cuadros (" + frames.length + ")";
+      });
+      document.getElementById("tgCancel").addEventListener("click", () => (toGraphPanel.hidden = true));
+      // un cuadro en RGBA: todas las capas visibles juntas o sólo la capa actual
+      const cuadroRGBA = (f, soloCapa) => {
+        const G = soloCapa ? (f === cf ? grid : frames[f][cl]) : flat(f);
         const rgba = new Uint8Array(W * H * 4);
         let algo = false;
         for (let y = 0; y < H; y++)
           for (let x = 0; x < W; x++) {
-            const p = F[y][x];
+            const p = G[y][x];
             if (!p || p.e || !(p.a > 0)) continue;
             const c = rgbOf(p.c);
             const i = (y * W + x) * 4;
@@ -4371,17 +4466,33 @@
             rgba[i + 3] = Math.round(Math.min(1, p.a) * 255);
             algo = true;
           }
-        if (!algo) {
-          setStatus("No hay nada dibujado para mandar al grafo.");
+        return { rgba, algo };
+      };
+      document.getElementById("tgSend").addEventListener("click", () => {
+        const todos = document.getElementById("tgFrames").value === "all" && frames.length > 1;
+        const soloCapa = document.getElementById("tgLayers").value === "current";
+        const lista = todos ? frames.map((_, f) => f) : [cf];
+        const cuadros = lista.map((f) => cuadroRGBA(f, soloCapa));
+        if (!cuadros.some((c) => c.algo)) {
+          setStatus(soloCapa ? "La capa actual está vacía: no hay nada para mandar al grafo." : "No hay nada dibujado para mandar al grafo.");
           return;
         }
+        toGraphPanel.hidden = true;
         const desfase = (graph.nodes.filter((n) => n.type === "image").length % 6) * 24;
         const id = graphAddNodeAt("image", (-graphView.x + 40) / graphView.s + desfase, (-graphView.y + 40) / graphView.s + desfase);
-        graphNodeById(id).img = { w: W, h: H, data: bytesToB64(rgba) };
+        const n = graphNodeById(id);
+        if (todos) {
+          n.img = { w: W, h: H, frames: cuadros.map((c) => bytesToB64(c.rgba)) };
+          // el loop del grafo toma la cantidad de cuadros y la velocidad de la animación, así cierra justo
+          const fps = parseInt(document.getElementById("aFps").value, 10) || graphFps();
+          graph.time = { frames: Math.max(2, Math.min(64, cuadros.length)), fps: Math.max(1, Math.min(30, fps)) };
+          graphFrame = 0;
+        } else n.img = { w: W, h: H, data: bytesToB64(cuadros[0].rgba) };
         graphSelectOnly([id]);
         graphPreviewId = id;
         graphSave();
         graphOpen(true);
+        if (todos && cuadros.length > 64) goMsg("The graph loop holds up to 64 frames; the animation plays faster to fit.");
       });
       document.getElementById("goClose").addEventListener("click", () => graphOpen(false));
       document.getElementById("goApply").addEventListener("click", graphApply);
