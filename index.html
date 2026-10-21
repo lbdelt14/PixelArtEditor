@@ -1477,6 +1477,7 @@
         drawBrush(x, y, c, a);
         redraw();
       };
+      let tileHoverCentro = false;
       const redraw = () => {
         const tw = W * PSIZE,
           th = H * PSIZE;
@@ -1570,10 +1571,13 @@
           for (let j = 0; j < 3; j++)
             for (let i = 0; i < 3; i++) if (i !== 1 || j !== 1) ctx.drawImage(canvas, tw, th, tw, th, i * tw, j * th, tw, th);
           ctx.translate(tw, th);
-          ctx.strokeStyle = "#ff2020";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(0, 0, tw, th);
-          ctx.lineWidth = 1;
+          // el recuadro rojo del centro sólo se ve con el puntero adentro
+          if (tileHoverCentro) {
+            ctx.strokeStyle = "#ff2020";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(0, 0, tw, th);
+            ctx.lineWidth = 1;
+          }
         }
         drawSel();
         drawXf();
@@ -1682,6 +1686,7 @@
         }
         if (gestureLock) return;
         const [x, y] = getCoords(e);
+        tileHoverCentro = x >= 0 && x < W && y >= 0 && y < H;
         const cx0 = tileMode ? wrapX(x) : Math.max(0, Math.min(W - 1, x)),
           cy0 = tileMode ? wrapY(y) : Math.max(0, Math.min(H - 1, y));
         if (xf && xf.drag !== null) return xfMove(e);
@@ -1722,6 +1727,7 @@
       canvas.addEventListener("pointerup", endPointer);
       canvas.addEventListener("pointercancel", endPointer);
       canvas.addEventListener("pointerleave", () => {
+        tileHoverCentro = false;
         if (!pointers.size) redraw();
       });
       canvas.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -6351,10 +6357,11 @@
       // ---------- zoom y desplazamiento
       const viewport = document.getElementById("viewport");
       // En el teléfono el lienzo tiene que entrar en la franja de arriba que queda fija (ver el CSS de @media).
+      // En la PC entra en el alto real del recuadro (que depende de lo que ocupan la animación y las capas).
       const fitScale = () => {
         const alto = window.matchMedia("(max-width: 820px)").matches
           ? window.innerHeight * 0.44
-          : Math.max(200, window.innerHeight * 0.68);
+          : viewport.clientHeight || Math.max(200, window.innerHeight * 0.68);
         return Math.min(1, (viewport.clientWidth || canvas.width) / canvas.width, alto / canvas.height);
       };
       let zoomEscribiendo = false;
@@ -6418,6 +6425,8 @@
         { passive: false },
       );
       window.addEventListener("resize", applyZoom);
+      // si cambia el alto del recuadro (por ejemplo al abrir o cerrar la animación), el 100% se vuelve a ajustar
+      if (window.ResizeObserver) new ResizeObserver(() => applyZoom()).observe(viewport);
 
       // ---------- formas: línea, rectángulo, elipse
       const SHAPES = ["line", "rect", "ellipse"];
@@ -7118,7 +7127,7 @@
         canvas.height = (tileMode ? 3 : 1) * H * PSIZE;
         applyZoom();
         redraw();
-        setStatus(tileMode ? "Modo tile: el recuadro rojo es tu dibujo; lo demás son copias" : "");
+        setStatus(tileMode ? "Modo tile: el centro es tu dibujo (se marca en rojo al pasar el puntero); lo demás son copias" : "");
       };
 
       // ---------- color por código (hex, rgba, hsla) y selector del sistema
